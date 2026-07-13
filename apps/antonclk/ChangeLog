@@ -14,4 +14,20 @@
 0.10: Use Bangle.setUI({remove:...}) to allow loading the launcher without a full reset on 2v16
 0.11: Moved enhanced Anton clock to 'Anton Clock Plus' and stripped this clock back down to make it faster for new users (270ms -> 170ms)
       Modified to avoid leaving functions defined when using setUI({remove:...})
-0.12: Pass in `redraw` to allow `Bangle.uiRedraw()` to redraw the clock
+0.21: Enabled continuous heart-rate and periodic sensor readings
+0.23: Improved invalid heart-rate handling
+0.24: Added initial sleep detection
+0.25: Refined sleep detection
+0.26: Fixed sleep time display
+0.27: Corrected sleep time handling
+0.28: Fixed SVG rendering
+0.29: Improved heart-rate and sleep handling
+0.30: Added diagnostic logging
+0.31: Improved sensor stability
+0.32: Refined sensor state handling
+0.33: Internal maintenance release
+0.34: Fixed status icon colors
+0.35: Improved worn-state detection
+0.35.2: Internal maintenance release
+0.35.3: Improved sleep state handling
+0.36: Added SleepLog integration and Daily catalog metadata

@@ -1,6 +1,6 @@
 {
-    "name": "BangleApps",
-    "short_name": "BangleApps",
+  "name": "Daily BangleApps",
+  "short_name": "Daily Apps",
     "description": "Banglejs App Store",
     "icons": [
         {
@@ -17,6 +17,6 @@
     "theme_color": "#5755d9",
     "background_color": "#5755d9",
     "display": "standalone",
-    "start_url": "https://banglejs.com/apps/",
-    "scope": "https://banglejs.com/apps/"
+  "start_url": "./",
+  "scope": "./"
 }

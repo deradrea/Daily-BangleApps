@@ -11,9 +11,8 @@ if (window.location.host==="banglejs.com") {
   document.getElementById("apploaderlinks").innerHTML =
     'This is your local Bangle.js App Loader - you can try the <a href="https://banglejs.com/apps/">Official Version</a> here.';
 } else {
-  document.title += " [Unofficial]";
   document.getElementById("apploaderlinks").innerHTML =
-    'This is not the official Bangle.js App Loader - you can try the <a href="https://banglejs.com/apps/">Official Version</a> here.';
+    'Repository applicazioni Daily per Bangle.js 2. Per le applicazioni pubbliche puoi usare anche il <a href="https://banglejs.com/apps/">catalogo Espruino</a>.';
 }
 
 var RECOMMENDED_VERSION = "2v29";
@@ -32,7 +31,9 @@ Const.APP_DATES_CSV = "appdates.csv";
   let username = "espruino";
   let githubMatch = window.location.href.match(/\/([\w-]+)\.github\.io/);
   if (githubMatch) username = githubMatch[1];
-  Const.APP_SOURCECODE_URL = `https://github.com/${username}/BangleApps/tree/master/apps`;
+  Const.APP_SOURCECODE_URL = username === "deradrea"
+    ? "https://github.com/deradrea/Daily-BangleApps/tree/master/apps"
+    : `https://github.com/${username}/BangleApps/tree/master/apps`;
 })();
 
 // When a device is found, filter the apps accordingly
