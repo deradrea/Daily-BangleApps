@@ -1,0 +1,11 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const {fixture} = require('./app.test.cjs');
+const f = fixture(), panels = [{title: 'Display spento', commands: []}];
+f.input.btnRelease(); panels.push({title: 'Una pressione: 10 secondi', commands: structuredClone(f.graphics.commands)});
+f.clock.advance(180); f.input.btnRelease(); panels.push({title: 'Due pressioni: fisso', commands: structuredClone(f.graphics.commands)});
+f.state.queue.push({id: 'preview-only', metric: 'battito', value: 110, severity: 'warning'});
+f.update(); panels.push({title: 'Alert: risposta touch', commands: structuredClone(f.graphics.commands)});
+f.input.remove();
+const target = path.resolve(__dirname, '../../../vera-mobile/build/veranode-clock-draw.json');
+fs.writeFileSync(target, JSON.stringify(panels));

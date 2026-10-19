@@ -1,0 +1,93 @@
+{
+  "id": "veranode",
+  "name": "Vera Node",
+  "shortName": "Vera",
+  "version": "0.02",
+  "author": "Daily Practice 22 SRL",
+  "description": "Development prototype: low-redraw clock, live BLE, offline recording and local rules. Physical validation and authenticated Vera provisioning pending.",
+  "icon": "app.png",
+  "type": "clock",
+  "tags": "clock,health,bluetooth",
+  "supports": [
+    "BANGLEJS2"
+  ],
+  "allow_emulator": true,
+  "readme": "README.md",
+  "storage": [
+    {"name": "veranode.clock.js", "url": "clock.js"},
+    {
+      "name": "veranode.app.js",
+      "url": "app.js"
+    },
+    {
+      "name": "veranode.boot.js",
+      "url": "boot.js"
+    },
+    {
+      "name": "veranode.core.js",
+      "url": "core.js"
+    },
+    {
+      "name": "veranode.runtime.js",
+      "url": "runtime.js"
+    },
+    {
+      "name": "veranode.wire.js",
+      "url": "wire.js"
+    },
+    {
+      "name": "veranode.img",
+      "url": "app-icon.js",
+      "evaluate": true
+    }
+  ],
+  "data": [
+    {"name": "veranode.time.json"},
+    {"wildcard": "veranode.t?idx"},
+    {"wildcard": "veranode.t?", "storageFile": true},
+    {"name": "veranode.tack0"},
+    {"name": "veranode.tack1"},
+    {"name": "veranode.ble.json"},
+    {
+      "wildcard": "veranode.s?idx"
+    },
+    {
+      "wildcard": "veranode.e?idx"
+    },
+    {
+      "wildcard": "veranode.s?",
+      "storageFile": true
+    },
+    {
+      "wildcard": "veranode.e?",
+      "storageFile": true
+    },
+    {
+      "name": "veranode.sack0"
+    },
+    {
+      "name": "veranode.sack1"
+    },
+    {
+      "name": "veranode.eack0"
+    },
+    {
+      "name": "veranode.eack1"
+    },
+    {
+      "name": "veranode.al0"
+    },
+    {
+      "name": "veranode.al1"
+    },
+    {
+      "name": "veranode.policy.json"
+    },
+    {
+      "name": "veranode.config.json"
+    },
+    {
+      "name": "veranode.face.json"
+    }
+  ]
+}
