@@ -78,7 +78,7 @@
     },
     clock: {now: Date.now, setWall: function(ms, timezoneMinutes) { setTime(ms / 1000); E.setTimeZone(timezoneMinutes / 60); }, setTimeout: setTimeout, clearTimeout: clearTimeout,
       setInterval: setInterval, clearInterval: clearInterval},
-    hrm: function(on) { Bangle.setHRMPower(on, "veranode"); },
+    hrm: function(on) { return Bangle.setHRMPower(on, "veranode"); },
     accel: function() { return Bangle.getAccel(); },
     pressure: function() { return Bangle.getPressure(); },
     connected: function() { return !!NRF.getSecurityStatus().connected; },

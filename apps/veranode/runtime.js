@@ -20,6 +20,7 @@ exports.create = function(env) {
   var timeHistory = env.timeFactory ? journal("veranode.t", 4, 16, "Orario") : null;
   var state = {v: "0.2.0", mac: env.mac, connected: false, recordIntervalMs: intervalMs, lastRecordAt: null, nextRecordAt: null, peerName: null, values: {}, running: false,
     policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false};
+  var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
   function rebaseTime(delta) {
@@ -105,24 +106,27 @@ exports.create = function(env) {
     var generation = ++pressureGeneration;
     pressureTimer = clock.setTimeout(function() {
       if (generation !== pressureGeneration) return;
-      pressureGeneration++; pendingPressure = false;
+      pressureGeneration++; pendingPressure = false; sensorHealth.temperatureFailures++;
     }, 5000);
     var request;
     try {
       request = env.pressure();
       if (!request || typeof request.then !== "function") throw new Error("Sensore non disponibile");
-    } catch (e) { clock.clearTimeout(pressureTimer); pendingPressure = false; return; }
+    } catch (e) { clock.clearTimeout(pressureTimer); pendingPressure = false; sensorHealth.temperatureFailures++; return; }
     request.then(function(value) {
       if (disposed || generation !== pressureGeneration) return;
       clock.clearTimeout(pressureTimer); pendingPressure = false;
-      if (value && typeof value.temperature === "number" && isFinite(value.temperature)) ingest("temperatura", value.temperature, 100);
+      if (value && typeof value.temperature === "number" && isFinite(value.temperature)) {
+        sensorHealth.temperatureReads++; ingest("temperatura", value.temperature, 100);
+      } else sensorHealth.temperatureFailures++;
     }, function() {
-      if (generation === pressureGeneration) { clock.clearTimeout(pressureTimer); pendingPressure = false; }
+      if (generation === pressureGeneration) { clock.clearTimeout(pressureTimer); pendingPressure = false; sensorHealth.temperatureFailures++; }
     });
   }
   function tick() {
     if (disposed || !state.running || state.maintenancePaused) return;
     observeTime();
+    sensorHealth.tickCount++;
     state.lastRecordAt = clock.now(); state.nextRecordAt = state.lastRecordAt + intervalMs;
     pressure();
     var acc;
@@ -217,6 +221,7 @@ exports.create = function(env) {
     state.queue.shift(); saveAlerts(); changed(); return true;
   }
   function onHeart(value) {
+    if (state.running && !state.maintenancePaused) sensorHealth.heartEvents++;
     if (value && typeof value.confidence === "number" && value.confidence >= 50 &&
         typeof value.bpm === "number" && isFinite(value.bpm) && value.bpm > 0 && value.bpm <= 65535) ingest("battito", value.bpm, value.confidence);
   }
@@ -226,33 +231,59 @@ exports.create = function(env) {
     if (state.running || disposed) return;
     if (env.progress) env.progress("Sensori", 0, 0);
     if (timeTracker) { timeTracker.start(); state.clockRevision = timeTracker.status().revision; }
-    state.running = true;
-    env.on("HRM", onHeart); env.on("connect", connected); env.on("disconnect", disconnected);
-    state.connected = env.connected();
-    // Continuous HRM preserves the current monitoring behaviour. Duty cycling
-    // must be introduced only with measured alert latency/quality requirements.
-    env.hrm(true);
-    tick(); timer = clock.setInterval(tick, intervalMs); changed();
-    if (env.progress) env.progress("Pronto", 1, 1);
+    // A failed hardware start must never leave a successful running flag.
+    sensorHealth.startError = null;
+    try {
+      env.on("HRM", onHeart); env.on("connect", connected); env.on("disconnect", disconnected);
+      state.connected = env.connected();
+      if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
+      sensorHealth.hrmRequested = true;
+      state.running = true;
+      timer = clock.setInterval(tick, intervalMs);
+      tick(); changed();
+      if (env.progress) env.progress("Pronto", 1, 1);
+    } catch (e) {
+      state.running = false; sensorHealth.hrmRequested = false;
+      sensorHealth.startError = String(e).slice(0, 120);
+      if (timer !== undefined) clock.clearInterval(timer);
+      timer = undefined;
+      if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
+      pressureGeneration++; pendingPressure = false;
+      env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
+      try { env.hrm(false); } catch (_) { /* Keep the original startup error. */ }
+      throw e;
+    }
   }
+  function health() {
+    return {schemaVersion: 1, running: state.running, scheduled: timer !== undefined,
+      hrmRequested: sensorHealth.hrmRequested, maintenancePaused: state.maintenancePaused === true,
+      recordingBlocked: state.paused === true || state.maintenancePaused === true,
+      tickCount: sensorHealth.tickCount, heartEvents: sensorHealth.heartEvents,
+      temperatureReads: sensorHealth.temperatureReads, temperatureFailures: sensorHealth.temperatureFailures,
+      lastRecordAt: state.lastRecordAt, nextRecordAt: state.nextRecordAt,
+      startError: sensorHealth.startError};
+  }
+
   // Explicit preparation hold: drain the archive before a fresh offline trial.
   // This neither erases data nor releases the management/UI listeners.
   function pauseRecording(paused) {
     if (disposed) throw new Error("Software non attivo");
     state.maintenancePaused = paused === true;
-    env.hrm(!state.maintenancePaused && state.running);
+    var on = !state.maintenancePaused && state.running;
+    sensorHealth.hrmRequested = env.hrm(on) !== false && on;
     if (!state.maintenancePaused && state.running) tick();
     changed();
   }
   function dispose() {
-    disposed = true; state.running = false;
-    if (timer) clock.clearInterval(timer);
+    disposed = true; state.running = false; sensorHealth.hrmRequested = false;
+    if (timer !== undefined) clock.clearInterval(timer);
+    timer = undefined;
     if (notifyTimer) clock.clearTimeout(notifyTimer);
     if (pressureTimer) clock.clearTimeout(pressureTimer);
     env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
     env.hrm(false); listeners = [];
   }
-  return {state: state, start: start, dispose: dispose, pauseRecording: pauseRecording, installPolicy: installPolicy, respond: respond,
+  return {state: state, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, installPolicy: installPolicy, respond: respond,
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,
     readClock: function() { if (!timeTracker) throw new Error("Controllo orario non disponibile"); observeTime(); return timeTracker.status(); },
     syncClock: function(req) { if (!timeTracker) throw new Error("Controllo orario non disponibile"); return timeTracker.sync(req); },

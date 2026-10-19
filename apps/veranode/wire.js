@@ -108,6 +108,7 @@ exports.create = function(env) {
         snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true;
         snapshot.preparationPaused = state.maintenancePaused === true;
         snapshot.storageError = state.storageError;
+        if (node.health) snapshot.acquisitionHealth = node.health();
         snapshot.contextConfigured = !!state.policy;
         if (env.describe) {
           try { snapshot.hardware = env.describe(); }
