@@ -27,6 +27,7 @@ test('system boot keeps Vera GATT services and starts sensors only after service
   assert.equal(f.power.length, 0);
   f.clock.advance(0); assert.equal(f.power.at(-1), true);
   assert.equal(context.global.VeraBoot.phase,'Pronto');
+  assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Avviato'));
   assert.ok(display.length>1);
   context.global.VeraNode.dispose();
 });
@@ -38,6 +39,8 @@ test('startup shows a failure state instead of an indefinite loading message',()
    require:()=>{throw Error('Storage unavailable');}};
  assert.throws(()=>vm.runInNewContext(fs.readFileSync(require.resolve('../../apps/veranode/boot.js'),'utf8'),context),/Storage unavailable/);
  assert.equal(context.global.VeraBoot.failed,true);
+ assert.equal(context.global.VeraBoot.failurePhase,'Sistema');
+ assert.match(context.global.VeraBoot.error,/Storage unavailable/);
  assert.equal(context.global.VeraBoot.phase,'Errore avvio');
  assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Avvio interrotto'));
 });

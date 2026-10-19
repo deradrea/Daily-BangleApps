@@ -21,7 +21,7 @@
     var w = g.getWidth(), x = w / 2, y = 112, failed = phase === "Errore avvio";
     g.reset().setBgColor("#000000").clear().setColor("#00ffff").setFont("Vector", 28).setFontAlign(0, -1);
     g.drawString("VERA", x, 14).setColor("#ffffff").setFont("Vector", 16);
-    g.drawString(failed ? "Avvio interrotto" : "Avvio in corso", x, 51);
+    g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Avvio in corso", x, 51);
     g.setColor("#303030").fillCircle(x, y, 39).setColor("#000000").fillCircle(x, y, 34);
     if (total > 0 && done > 0) {
       // Outer + inner arcs stay below the hardware limit of 64 vertices.
@@ -38,6 +38,7 @@
     }
     g.setColor("#ffffff").setFont("Vector", 16).drawString(failed ? "Errore" : total > 1 ? done + " / " + total : "...", x, 99);
     g.setFont("Vector", 11).drawString(total > 1 ? "blocchi" : phase === "Pronto" ? "Pronto" : "Attendi", x, 122);
+    g.setFont("Vector", 14).drawString(failed ? startup.failurePhase || "Sistema" : phase, x, 158);
     if (g.flip) g.flip();
     lastPaint = Date.now();
   }
@@ -121,7 +122,7 @@
     try {
       global.VeraNode.start();
       if (!global.VeraNode.state.bleEnabled) NRF.sleep();
-    } catch (e) { startup.failed = true; progress("Errore avvio", 0, 0); throw e; }
+    } catch (e) { startup.failed = true; startup.failurePhase = startup.phase; startup.error = String(e).slice(0, 120); progress("Errore avvio", 0, 0); throw e; }
   }, 0);
-  } catch (e) { startup.failed = true; progress("Errore avvio", 0, 0); throw e; }
+  } catch (e) { startup.failed = true; startup.failurePhase = startup.phase; startup.error = String(e).slice(0, 120); progress("Errore avvio", 0, 0); throw e; }
 })();
