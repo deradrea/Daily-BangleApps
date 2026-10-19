@@ -15,6 +15,27 @@ function request(f) {
   return {utcMs:1792051200000,timezoneMinutes:120,uncertaintyMs:2000,source:'phone_auto',
     syncId:'11111111-1111-4111-8111-111111111111',epoch:state.epoch,revision:state.revision,boot:state.boot};
 }
+
+test('Vera server reference retains distinct provenance, expiry and immutable samples',()=>{
+  const f=setup(); f.samples.append('sample',100000,{value:72});
+  const original=f.storage.files.get('s0'), req={...request(f),source:'vera_server'};
+  assert.equal(f.tracker.sync(req).quality,'vera_server');
+  const rows=f.history.readBatch(0,16);
+  assert.equal(rows.at(-1).data.source,'vera_server');
+  assert.equal(rows.at(-2).data.source,'vera_server');
+  assert.equal(f.storage.files.get('s0'),original);
+  assert.throws(()=>f.tracker.sync({...req,source:'phone_auto'}),/conflitto/);
+  f.clock.time+=86400001; assert.equal(f.tracker.status().quality,'stale');
+  assert.equal(setup(f.storage).tracker.status().quality,'unverified');
+});
+
+test('unknown sources and excessive server uncertainty cannot change clock',()=>{
+  for(const patch of [{source:'pc_auto'},{source:'server'},{source:'vera_server',uncertaintyMs:5001}]) {
+    const f=setup(), before=f.clock.now();
+    assert.throws(()=>f.tracker.sync({...request(f),...patch}));
+    assert.equal(f.clock.now(),before);
+  }
+});
 test('clock sync is journaled before and after change and never rewrites existing samples',()=>{
   const f=setup();f.samples.append('sample',100000,{values:{battito:{value:72,at:100000}}});
   const original=f.storage.files.get('s0'), req=request(f);

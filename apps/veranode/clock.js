@@ -19,7 +19,7 @@ exports.create = function(env) {
   }
   function status() {
     var now = clock.now(), current = quality;
-    if (current === "phone_auto" && reference &&
+    if ((current === "phone_auto" || current === "vera_server") && reference &&
         (now < reference.utcMs - reference.uncertaintyMs || now > reference.validUntil)) current = "stale";
     return {epoch: history.checkpoint.epoch, revision: revision, boot: boot,
       quality: tracked ? current : "untracked", tracked: tracked, nowMs: now,
@@ -52,14 +52,14 @@ exports.create = function(env) {
     if (!req || typeof req.utcMs !== "number" || !isFinite(req.utcMs) ||
         req.utcMs < 1577836800000 || req.utcMs > 4102444800000 ||
         typeof req.syncId !== "string" || req.syncId.length !== 36 || !/^[a-z0-9-]+$/i.test(req.syncId) ||
-        req.source !== "phone_auto" || typeof req.uncertaintyMs !== "number" || !isFinite(req.uncertaintyMs) ||
+        (req.source !== "phone_auto" && req.source !== "vera_server") || typeof req.uncertaintyMs !== "number" || !isFinite(req.uncertaintyMs) ||
         req.uncertaintyMs < 1000 || req.uncertaintyMs > 5000 ||
         typeof req.timezoneMinutes !== "number" || !isFinite(req.timezoneMinutes) ||
         Math.floor(req.timezoneMinutes) !== req.timezoneMinutes || Math.abs(req.timezoneMinutes) > 840) {
       throw new Error("Riferimento orario non valido");
     }
     if (lastSync && req.syncId === lastSync.syncId) {
-      if (req.utcMs !== lastSync.utcMs || req.timezoneMinutes !== lastSync.timezoneMinutes) throw new Error("Sincronizzazione in conflitto");
+      if (req.utcMs !== lastSync.utcMs || req.timezoneMinutes !== lastSync.timezoneMinutes || req.source !== (lastSync.source || "phone_auto")) throw new Error("Sincronizzazione in conflitto");
       return status();
     }
     if (req.epoch !== history.checkpoint.epoch || req.revision !== revision || req.boot !== boot) {
@@ -80,8 +80,8 @@ exports.create = function(env) {
         timezoneMinutes: req.timezoneMinutes, source: req.source, syncId: req.syncId});
       reference = {utcMs: after, uncertaintyMs: req.uncertaintyMs, validUntil: after + 86400000,
         fromSequence: boundary};
-      quality = "phone_auto";
-      lastSync = {utcMs: req.utcMs, timezoneMinutes: req.timezoneMinutes, syncId: req.syncId};
+      quality = req.source;
+      lastSync = {utcMs: req.utcMs, timezoneMinutes: req.timezoneMinutes, syncId: req.syncId, source: req.source};
       // Optional summary only; the CRC journal remains the audit source of truth.
       try { env.storage.write("veranode.time.json", env.core.pack(lastSync)); } catch (_) { /* Recoverable from history. */ }
     } finally {

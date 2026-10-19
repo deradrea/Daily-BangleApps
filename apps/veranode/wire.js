@@ -94,7 +94,7 @@ exports.create = function(env) {
           sampleEpoch: node.samples.checkpoint.epoch, sampleHigh: node.samples.next - 1,
           sampleAck: node.samples.checkpoint.ack, eventEpoch: node.events.checkpoint.epoch,
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
-          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory}};
+          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, clockServerSync: !!node.timeHistory}};
         if (node.timeHistory) {
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
