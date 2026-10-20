@@ -263,7 +263,7 @@ test('scrolling menu keeps large labels and memory counts distinct',()=>{
   f.clock.advance(301);f.input.touch(1,{x:88,y:60});assert.ok(has('Attiva'));
   f.clock.advance(301);f.input.touch(1,{x:88,y:155});
   assert.ok(has('123'));assert.ok(has('Usati 128/2944'));assert.ok(has('Liberi 2816'));
-  f.clock.advance(301);f.input.touch(1,{x:88,y:155});assert.ok(has('Attiva'));
+  f.clock.advance(301);f.input.touch(1,{x:16,y:16});assert.ok(has('Attiva'));
   f.clock.advance(301);f.input.touch(1,{x:16,y:16});assert.ok(has('Menu'));
   assert.deepEqual(f.radio,[]);f.input.remove();
 });
@@ -272,7 +272,7 @@ test('collection distinguishes BLE presence from delivery and flags blocked or s
   const f=fixture(), has=text=>f.graphics.commands.some(c=>c.type==='text'&&String(c.args[0])===text);
   f.state.lastRecordAt=f.clock.now()-12000;
   f.input.btnRelease();f.clock.advance(401);f.input.touch(1,{x:88,y:155});
-  assert.ok(has('BLE collegato'));assert.ok(has('Non prova invio'));
+  assert.ok(has('BLE collegato'));assert.ok(has('Invio: vedi app'));
   f.security.connected=false;f.update();f.clock.advance(2000);assert.ok(has('Offline'));
   assert.ok(has('Senza telefono'));assert.ok(f.graphics.commands.some(c=>c.type==='text'&&/^Ultimo: [0-9][0-9]:[0-9][0-9]$/.test(c.args[0])));
   f.state.paused=true;f.state.storageError='Memoria campioni piena';f.update();f.clock.advance(2000);
@@ -471,4 +471,76 @@ test('interaction renews idle but inactivity sleeps and wake preserves page and 
   f.input.touch(1,{x:20,y:16});assert.ok(has('Menu'));assert.ok(has('Sistema'));
   f.input.swipe(0,1);assert.ok(has('Memoria'));f.input.swipe(0,1);assert.ok(has('Raccolta'));
   f.input.remove();assert.equal(f.clock.timers.size,0);
+});
+
+
+test('administrative erase view includes pending records but cannot destroy data or store a PIN',()=>{
+  const f=fixture(), original=JSON.stringify(f.stats);
+  const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
+  f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
+  f.input.touch(1,{x:88,y:118}); // memory
+  f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+  assert.ok(has('Tutti i campioni'));assert.ok(has('123 non trasferiti'));
+  assert.ok(has('Solo amministratore'));assert.ok(has('Da abilitare via Vera'));
+  for(let i=0;i<6;i++){f.clock.advance(301);f.input.touch(1,{x:88,y:156});}
+  assert.equal(JSON.stringify(f.stats),original);assert.deepEqual(f.radio,[]);
+  assert.equal(f.state.running,true);f.input.remove();assert.equal(f.clock.timers.size,0);
+});
+
+test('system destinations scroll without pagination and expose honest time and software states',()=>{
+  const f=fixture(),has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
+  f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
+  f.input.swipe(0,-1);f.input.swipe(0,-1);f.input.touch(1,{x:88,y:118});
+  f.input.swipe(0,-1);f.input.swipe(0,-1);
+  f.clock.advance(301);f.input.touch(1,{x:88,y:60});assert.ok(has('Ora e data'));
+  assert.ok(has('da Vera App'));assert.ok(has('Date originali conservate'));
+  f.clock.advance(301);f.input.touch(1,{x:16,y:16});
+  f.clock.advance(301);f.input.touch(1,{x:88,y:118});assert.ok(has('Versione: vedi app'));
+  assert.ok(!has('Aggiornato'));f.input.remove();
+});
+
+
+test('face shortcuts open effects, collection and actual charging details without changing collection',()=>{
+ const f=fixture(),has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
+ f.input.btnRelease();f.clock.advance(401);
+ f.input.touch(1,{x:88,y:70});assert.ok(has('Effetti'));
+ f.clock.advance(301);f.input.touch(1,{x:16,y:16});
+ f.clock.advance(301);f.input.touch(1,{x:150,y:13});assert.ok(has('Batteria'));assert.ok(has('Non in carica'));
+ f.charging(true);assert.ok(has('In ricarica'));
+ f.clock.advance(301);f.input.touch(1,{x:16,y:16});
+ f.clock.advance(301);f.input.touch(1,{x:88,y:132});assert.ok(has('Raccolta'));
+ assert.equal(f.state.running,true);assert.deepEqual(f.radio,[]);f.input.remove();
+});
+
+
+test('long critical status and unverified dates fit the display and icon text region',()=>{
+ const f=fixture('still'),texts=()=>f.graphics.commands.filter(c=>c.type==='text');
+ f.state.paused=true;f.stats.full=true;
+ f.input.btnRelease();f.clock.advance(401);f.input.touch(1,{x:88,y:132});
+ const title=texts().find(c=>c.args[0]==='Da verificare');
+ assert.ok(title.size*0.55*title.args[0].length<=112);
+ f.input.remove();
+});
+
+test('software page shows runtime version and never fabricates a newer installed version',()=>{
+ const f=fixture('still',80,{v:'0.2.0'});
+ const tap=(x,y)=>{f.clock.advance(301);f.input.touch(1,{x,y});};
+ f.input.swipe(0,1);f.input.swipe(0,-1);f.input.swipe(0,-1);tap(88,118);
+ f.input.swipe(0,-1);f.input.swipe(0,-1);tap(88,118);
+ assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Versione 0.2.0'));
+ f.input.remove();
+});
+
+
+test('pinned pulse stops its repaint interval on stale data and resumes with fresh acquisition',()=>{
+ const f=fixture('pulse');f.input.btnRelease();f.clock.advance(401);f.clock.advance(1000);
+ f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();
+ assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Fisso'));
+ f.clock.advance(46000);assert.equal(f.power.at(-1),true);
+ assert.ok(![...f.clock.timers.values()].some(t=>t.ms===250));
+ const count=f.graphics.commands.length;f.clock.advance(1000);assert.equal(f.graphics.commands.length,count);
+ f.state.values.battito.at=f.clock.now();f.update();
+ assert.ok([...f.clock.timers.values()].some(t=>t.ms===250));
+ f.clock.advance(250);assert.ok(f.graphics.commands.length>count);
+ f.input.remove();assert.equal(f.clock.timers.size,0);
 });

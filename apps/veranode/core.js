@@ -50,11 +50,19 @@ function Journal(storage, prefix, options) {
       epoch: Date.now().toString(36) + Math.floor(Math.random() * 65536).toString(36)};
     this.saveCheckpoint(this.checkpoint);
   }
-  this.next = this.checkpoint.ack + 1;
+  var discarded=this.checkpoint.discardedThrough===undefined ? 0 : this.checkpoint.discardedThrough;
+  if(!finite(discarded) || discarded<0 || discarded>2147483647 || Math.floor(discarded)!==discarded)throw new Error("Tombstone non valido");
+  var administrative=this.checkpoint.adminCounter===undefined ? 0 : this.checkpoint.adminCounter;
+  if(!finite(administrative) || administrative<0 || administrative>2147483647 || Math.floor(administrative)!==administrative)
+    throw new Error("Contatore amministrativo non valido");
+  var eraseA=unpack(storage.read(prefix+"erase0")),eraseB=unpack(storage.read(prefix+"erase1"));
+  var eraseLast=eraseA && (!eraseB || eraseA.generation>eraseB.generation) ? eraseA : eraseB;
+  this.eraseLock=!!this.checkpoint.eraseOperation || !!(eraseLast && eraseLast.phase==="intent");
+  this.next = Math.max(this.checkpoint.ack,discarded) + 1;
   var files = options.files || storage.list(undefined, {sf: true});
   // A slower cadence must not hide segments created with a larger quota.
   // Discover existing numeric StorageFiles before choosing the scan bound.
-  var self = this;
+  var self = this, present = {};
   files.forEach(function(name) {
     if (name.slice(-1) === "\x01") name = name.slice(0, -1);
     if (name.slice(0, prefix.length) !== prefix) return;
@@ -63,17 +71,17 @@ function Journal(storage, prefix, options) {
     var index = Number(suffix);
     if (index >= 512) throw new Error("Archivio oltre il limite supportato");
     self.maxSegments = Math.max(self.maxSegments, index + 1);
+    if (String(index) === suffix) present[index] = true;
   });
   var existing = [], recovered = 0;
   for (var slot = 0; slot < this.maxSegments; slot++) {
-    if (files.includes(prefix + slot) || files.includes(prefix + slot + "\x01")) existing.push(slot);
+    if (present[slot]) existing.push(slot);
   }
   function progress() { if (options.progress) options.progress(recovered, existing.length); }
   progress();
   for (var entry = 0; entry < existing.length; entry++) {
     var i = existing[entry];
     var name = prefix + i;
-    if (!files.includes(name) && !files.includes(name + "\x01")) continue;
     var cached = unpack(storage.read(name + "idx")), fingerprint;
     if (this.segmentHash && cached && cached.epoch === this.checkpoint.epoch &&
       cached.count === this.segmentRecords && finite(cached.last) && cached.last >= cached.count) {
@@ -116,6 +124,7 @@ Journal.prototype.saveCheckpoint = function(value) {
   if (!readback || JSON.stringify(readback) !== JSON.stringify(value)) throw new Error("Checkpoint non confermato");
 };
 Journal.prototype.append = function(kind, at, payload) {
+  if(this.eraseLock)throw new Error("Archivio in manutenzione amministrativa");
   var row = {v: 1, epoch: this.checkpoint.epoch, seq: this.next, kind: kind, at: at, data: payload};
   var encoded = pack(row);
   if (encoded.length > this.maxLine) throw new Error("Record troppo grande");
@@ -140,9 +149,10 @@ Journal.prototype.append = function(kind, at, payload) {
   return row;
 };
 Journal.prototype.readBatch = function(after, limit) {
+  if(this.eraseLock)throw new Error("Archivio in manutenzione amministrativa");
   if (!finite(after) || after < 0 || Math.floor(after) !== after) throw new Error("Cursore non valido");
   limit = Math.min(16, Math.max(1, limit || 8));
-  var rows = [], self = this, cursor = Math.max(after, this.checkpoint.ack);
+  var rows = [], self = this, cursor = Math.max(after, this.checkpoint.ack, this.checkpoint.discardedThrough || 0);
   try {
     this.segments.forEach(function(segment) {
       if (rows.length >= limit || segment.last <= cursor) return;
@@ -165,11 +175,18 @@ Journal.prototype.readBatch = function(after, limit) {
   return rows;
 };
 Journal.prototype.ack = function(epoch, sequence) {
+  if(this.eraseLock)throw new Error("Archivio in manutenzione amministrativa");
   if (epoch !== this.checkpoint.epoch || !finite(sequence) || Math.floor(sequence) !== sequence ||
       sequence < this.checkpoint.ack || sequence >= this.next) throw new Error("ACK non valido");
-  var next = {generation: this.checkpoint.generation + 1, ack: sequence, epoch: epoch};
-  this.saveCheckpoint(next);
-  this.checkpoint = next;
+  // Retransmitted custody ACKs are idempotent: do not wear flash again.
+  // Still prune below: a previous erase may have failed after durable custody.
+  if (sequence > this.checkpoint.ack) {
+    var next = {generation: this.checkpoint.generation + 1, ack: sequence, epoch: epoch};
+    if(this.checkpoint.discardedThrough!==undefined)next.discardedThrough=this.checkpoint.discardedThrough;
+    if(this.checkpoint.adminCounter!==undefined)next.adminCounter=this.checkpoint.adminCounter;
+    this.saveCheckpoint(next);
+    this.checkpoint = next;
+  }
   var storage = this.storage, self = this;
   this.segments = this.segments.filter(function(segment) {
     if (segment.sealed && segment.last > 0 && segment.last <= sequence) {
@@ -182,7 +199,7 @@ Journal.prototype.ack = function(epoch, sequence) {
   });
   this.full = this.segments.length >= this.maxSegments && this.segments[this.segments.length - 1].sealed;
 };
-Journal.prototype.pending = function() { return this.next - 1 - this.checkpoint.ack; };
+Journal.prototype.pending = function() { return this.next - 1 - Math.max(this.checkpoint.ack,this.checkpoint.discardedThrough || 0); };
 // Actual append capacity includes retained partial segments and sealed tails.
 // This snapshot has no flash writes and does not scan stored record contents.
 Journal.prototype.stats = function() {

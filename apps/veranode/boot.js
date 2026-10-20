@@ -22,7 +22,7 @@
     g.reset().setBgColor("#000000").clear().setColor("#00ffff").setFont("Vector", 28).setFontAlign(0, -1);
     g.drawString("VERA", x, 14).setColor("#ffffff").setFont("Vector", 16);
     g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Avvio in corso", x, 51);
-    g.setColor("#303030").fillCircle(x, y, 39).setColor("#000000").fillCircle(x, y, 34);
+    g.setColor("#0000ff").fillCircle(x, y, 39).setColor("#000000").fillCircle(x, y, 34);
     if (total > 0 && done > 0) {
       // Outer + inner arcs stay below the hardware limit of 64 vertices.
       var points = [], i, angle, steps = Math.max(1, Math.ceil(done * 24 / total));
@@ -34,10 +34,11 @@
         angle = -Math.PI / 2 + Math.PI * 2 * done / total * i / steps;
         points.push(x + Math.cos(angle) * 34, y + Math.sin(angle) * 34);
       }
-      g.setColor(failed ? "#ff0000" : "#00ffff").fillPoly(points);
+      g.setColor(failed ? "#ff0000" : phase === "Pronto" ? "#00ff00" : "#00ffff").fillPoly(points);
     }
     g.setColor("#ffffff").setFont("Vector", 16).drawString(failed ? "Errore" : total > 1 ? done + " / " + total : "...", x, 99);
     g.setFont("Vector", 11).drawString(total > 1 ? "blocchi" : phase === "Pronto" ? "Pronto" : "Attendi", x, 122);
+    g.setFont("Vector", 10).drawString(Math.floor(startup.elapsedMs / 1000) + " s", x, 142);
     g.setFont("Vector", 14).drawString(failed ? startup.failurePhase || "Sistema" : phase, x, 158);
     if (g.flip) g.flip();
     lastPaint = Date.now();

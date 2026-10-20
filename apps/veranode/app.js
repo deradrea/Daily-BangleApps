@@ -6,7 +6,7 @@
   if (!state.running && node.start) node.start();
   var clock = {now: Date.now, setTimeout: setTimeout, clearTimeout: clearTimeout};
   var ui, redrawTimer, minuteTimer, ringTimer, animationStyle, disposed = false;
-  var interaction, pressedAt, cues, page = "clock", menuIndex = 0, history = [], consentReadyAt = 0;
+  var interaction, pressedAt, cues, page = "clock", menuIndex = 0, systemIndex = 0, history = [], consentReadyAt = 0;
   var consentFrame = false, consentEnded = false, consentChoosing = false;
   // Bounded RAM-only evidence for physical consent problems. No user identity,
   // flash writes, polling or changes to telemetry/authorization messages.
@@ -16,14 +16,15 @@
     if (consentTrace.length > 16) consentTrace.shift();
   }
   var storage = require("Storage"), savedFace = storage.readJSON("veranode.face.json", 1) || {};
+  var installedInfo = storage.readJSON("veranode.info", 1) || {};
   var styles = ["cycle", "pulse", "trace", "still"];
   var style = styles.includes(savedFace.style) ? savedFace.style : "cycle";
-  var previousPulse, styleError = false, candidate = styles.indexOf(style), animationEpoch = Date.now(), lastTap = 0;
+  var previousPulse, previousPulseColor, previousCycle, styleError = false, candidate = styles.indexOf(style), animationEpoch = Date.now(), lastTap = 0;
   var previousOptions = Bangle.getOptions();
   var previousBrightness = (require("Storage").readJSON("setting.json", 1) || {}).brightness;
   if (typeof previousBrightness !== "number") previousBrightness = 1;
   var colors = {bg: "#000000", surface: "#000000", text: "#ffffff", muted: "#ffffff",
-    accent: "#00ffff", heart: "#ff0000", warning: "#ffff00"};
+    success: "#00ff00", accent: "#00ffff", heart: "#ff0000", warning: "#ffff00"};
   // Only a deliberate button press or an alert wakes the display. Measurements
   // continue in boot runtime; no face-up/tap gestures, no hidden redraw loop.
   Bangle.setOptions({wakeOnBTN1: false, wakeOnFaceUp: false, wakeOnTouch: false,
@@ -48,7 +49,8 @@
     minuteTimer = on ? setInterval(function() { if (ui) draw(ui); }, 60000) : undefined;
   }
   function startAnimation(on) {
-    var eligible = on && page === "clock" && style !== "still" && !(ui && ui.alert);
+    var eligible = on && page === "clock" && style !== "still" && !(ui && ui.alert) &&
+      (style === "cycle" ? cycleProgress(Date.now()) !== null : !!recentHeart());
     if (eligible && ringTimer !== undefined && animationStyle === style) return;
     if (ringTimer !== undefined) clearInterval(ringTimer);
     ringTimer = undefined; animationStyle = undefined;
@@ -56,7 +58,11 @@
     animationStyle = style;
     animationEpoch = Date.now();
     ringTimer = setInterval(function() {
-      if (ui && ui.mode !== "off" && !ui.alert && page === "clock") drawProgress();
+      if (ui && ui.mode !== "off" && !ui.alert && page === "clock") {
+        // Stop animation when its measurement expires; a fresh sensor event
+        // restarts it via update(), without keeping an idle repaint loop alive.
+        startAnimation(true); drawProgress();
+      }
     }, style === "cycle" ? 1000 : 250);
   }
   function renewIdle() {
@@ -68,13 +74,15 @@
   function back() { if (page === "consent-ended") consentEnded = false; setPage(history.pop() || "clock"); }
   function home() { consentEnded = false; history = []; setPage("clock"); }
   function button(x1, y1, x2, y2, label, size) {
-    g.setColor(colors.text).drawRect(x1, y1, x2, y2);
+    g.setColor(colors.accent).drawRect(x1, y1, x2, y2);
     text(label, (x1 + x2) / 2, (y1 + y2 - size) / 2, size, colors.text, 0);
   }
   function inside(point, x1, y1, x2, y2) { return point.x >= x1 && point.x <= x2 && point.y >= y1 && point.y <= y2; }
   function pageHeader(title) {
-    g.setColor(colors.text).drawPoly([23, 8, 13, 17, 23, 26]);
+    g.setColor(colors.accent).drawPoly([23, 8, 13, 17, 23, 26]);
     text(title, 104, 8, 18, colors.text, 0);
+    var tint=page==="memory" || page==="admin" ? colors.warning : page==="collection" || page==="status" ? colors.success : page==="effects" ? colors.heart : colors.accent;
+    g.setColor(tint).drawPoly([8,31,168,31]);
   }
   // Icon geometry is shared by rendering and hit targets: no hidden tap zones.
   var menuItems = [
@@ -94,6 +102,12 @@
     } else if (kind === "ble") {
       g.drawPoly([x,y-13,x,y+13,x+9,y+5,x-8,y-7]);
       g.drawPoly([x-8,y+7,x+9,y-5,x,y-13]);
+    } else if (kind === "battery") {
+      g.drawRect(x-12,y-8,x+10,y+8).fillRect(x+11,y-3,x+14,y+3);
+      g.fillPoly([x+1,y-6,x-5,y+1,x,y+1,x-2,y+7,x+6,y-2,x+1,y-2]);
+    } else if (kind === "admin") {
+      g.drawPoly([x-11,y-9,x,y-13,x+11,y-9,x+10,y+4,x,y+13,x-10,y+4,x-11,y-9]);
+      g.drawRect(x-4,y-1,x+4,y+6).drawPoly([x-3,y-1,x-3,y-5,x+3,y-5,x+3,y-1]);
     } else if (kind === "profile") {
       g.drawRect(x-12,y-10,x+12,y+10); g.fillCircle(x-5,y-3,3);
       g.drawPoly([x-9,y+6,x-9,y+3,x-5,y+1,x-1,y+3,x-1,y+6]);
@@ -126,14 +140,22 @@
       if(menuIndex<menuItems.length-2)g.drawPoly([79,153,88,161,97,153]);
       return;
     }
-    ["Effetti", "Profilo", "Quadrante"].forEach(function(label,i) {
-      var top=36+i*47;
-      g.setColor(colors.text).drawRect(8,top,168,top+39);
-      icon(["effects","profile","clock"][i],29,top+20,colors.accent);
-      text(label,96,top+11,18,colors.text,0);
-      g.drawPoly([154,top+15,160,top+20,154,top+25]);
-    });
+    for (var j=0;j<2;j++) {
+      var entry=systemItems[systemIndex+j], row=35+j*58;
+      icon(entry.icon,28,row+25,entry.color);
+      text(entry.label,52,row+15,18,colors.text,-1);
+      g.setColor(entry.color).drawPoly([8,row+50,168,row+50]);
+    }
+    if(systemIndex<systemItems.length-2)g.setColor(colors.accent).drawPoly([79,153,88,161,97,153]);
   }
+  var systemItems=[
+    {label:"Effetti",page:"effects",icon:"effects",color:colors.heart},
+    {label:"Profilo",page:"status",icon:"profile",color:colors.success},
+    {label:"Ora e data",page:"time",icon:"clock",color:colors.warning},
+    {label:"Software",page:"software",icon:"system",color:colors.accent},
+    {label:"Amministr.",page:"admin",icon:"admin",color:colors.warning}
+  ];
+
   function sampleStats() {
     // Uses cached segment counters: never reads records or writes flash for UI.
     if (node.samples && node.samples.stats) return node.samples.stats();
@@ -144,9 +166,10 @@
     pageHeader("Raccolta");
     var paused = !!state.maintenancePaused, blocked = state.paused || stats.full || !!state.storageError;
     var title = paused ? "In pausa" : !state.running ? "Ferma" : blocked ? "Da verificare" : "Attiva";
-    text(title,w/2,35,23,paused || !state.running || blocked ? colors.warning : colors.text,0);
+    icon("collect",27,49,paused || !state.running || blocked ? colors.warning : colors.success);
+    text(title,106,36,21,paused || !state.running || blocked ? colors.warning : colors.success,0,112);
     text(linked ? "BLE collegato" : "Offline",w/2,64,21,linked ? colors.accent : colors.text,0);
-    text(paused ? "Pausa di test" : linked ? "Non prova invio" : "Senza telefono",w/2,91,18,colors.text,0);
+    text(paused ? "Pausa di test" : linked ? "Invio: vedi app" : "Senza telefono",w/2,91,18,colors.text,0);
     var elapsed=typeof state.lastRecordAt === "number" ? Date.now()-state.lastRecordAt : -1;
     var recent=elapsed >= 0 && elapsed <= Math.max(90000,state.recordIntervalMs*2);
     var last=recent ? new Date(state.lastRecordAt) : null;
@@ -160,28 +183,76 @@
     var stats = sampleStats();
     pageHeader("Memoria");
     text(stats.full ? "Memoria piena" : "Da trasferire", w / 2, 34, 18, stats.full ? colors.warning : colors.text, 0);
-    text(stats.pending, w / 2, 55, 36, stats.full ? colors.warning : colors.accent, 0);
+    icon("memory",26,73,stats.full ? colors.warning : colors.accent);
+    text(stats.pending, 103, 55, 36, stats.full ? colors.warning : colors.accent, 0);
     text("Usati " + stats.stored + "/" + stats.capacity, w / 2, 96, 18, colors.text, 0);
     text("Liberi " + stats.available, w / 2, 115, 18, stats.full ? colors.warning : colors.text, 0);
-    button(8, 137, 168, 174, "Indietro", 18);
+    g.setColor(colors.accent).drawRect(8,91,168,94);
+    if(typeof stats.stored === "number" && stats.capacity>0)
+      g.setColor(stats.full?colors.warning:colors.success).fillRect(9,92,9+Math.round(158*Math.min(1,stats.stored/stats.capacity)),93);
+    button(8, 137, 168, 174, "Gestisci dati", 18);
   }
   function effectsPage(w) {
     pageHeader("Effetti");
     var names = ["Ciclo sensori", "Pulsazione", "Traccia", "Statico"];
     var descriptions = ["Anello di raccolta", "Segue il bpm recente", "Illustrativa, non ECG", "Nessuna animazione"];
-    text(names[candidate], w / 2, 40, 22, colors.accent, 0);
+    icon("effects",26,49,colors.heart);
+    text(names[candidate], 104, 40, 19, colors.accent, 0,112);
     text(styleError ? "Non salvato: riprova" : descriptions[candidate], w / 2, 68, 16, styleError ? colors.warning : colors.text, 0);
     button(8, 90, 76, 130, "<", 26); button(100, 90, 168, 130, ">", 26);
     button(8, 134, 168, 174, styles[candidate] === style ? "Attivo / Esci" : "Applica", 18);
   }
   function statusPage(w) {
     pageHeader("Profilo");
-    text(state.policy ? "Profilo Vera" : "Nessun profilo", w / 2, 39, 22, colors.text, 0);
+    icon("profile",24,51,colors.success);
+    text(state.policy ? "Profilo Vera" : "Nessun profilo", 102, 39, 18, colors.text, 0);
     text(state.policy ? "Revisione " + state.policy.revision : "Da Vera App", w / 2, 67, 18, colors.text, 0);
     var rules = state.policy && Array.isArray(state.policy.rules) ? state.policy.rules.length : null;
     text(rules === null ? "Regole: --" : rules + " regole", w / 2, 91, 18, colors.text, 0);
     text(state.policyStale ? "Scaduto" : state.policy ? "Presente" : "Da configurare", w / 2, 115, 16, state.policyStale ? colors.warning : colors.text, 0);
     button(8, 134, 168, 174, "Indietro", 18);
+  }
+  function timePage(w) {
+    pageHeader("Ora e data");
+    var now=new Date();
+    icon("clock",24,57,colors.warning);
+    text(("0"+now.getHours()).slice(-2)+":"+("0"+now.getMinutes()).slice(-2),104,40,32,colors.text,0);
+    text(now.getFullYear()<2020?"Data da verificare":now.getDate()+" / "+(now.getMonth()+1)+" / "+now.getFullYear(),w/2,82,18,colors.warning,0);
+    text("Verifica e sincronizza",w/2,112,15,colors.text,0);
+    text("da Vera App",w/2,132,17,colors.accent,0);
+    text("Date originali conservate",w/2,158,12,colors.text,0);
+  }
+  function batteryPage(w) {
+    pageHeader("Batteria");
+    var charging=Bangle.isCharging(), percent=E.getBattery();
+    icon("battery",26,59,charging ? colors.success : colors.accent);
+    text(typeof percent==="number" && isFinite(percent) ? Math.round(Math.max(0,Math.min(100,percent)))+"%" : "--%",104,41,34,colors.text,0);
+    text(charging ? "In ricarica" : "Non in carica",w/2,85,21,charging ? colors.success : colors.text,0);
+    text("Luce al 100%",w/2,118,17,colors.text,0);
+    text("solo a display acceso",w/2,143,14,colors.accent,0);
+  }
+  function softwarePage(w) {
+    pageHeader("Software");
+    icon("system",w/2,52,colors.accent);
+    text("Vera Node",w/2,75,24,colors.text,0);
+    // Display the actual runtime version, not an assumed catalogue update.
+    var version=typeof state.v==="string" && state.v.length<=20 && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(state.v) ? state.v : null;
+    text(version ? "Versione "+version : "Versione: vedi app",w/2,106,16,colors.text,0);
+    var revision=typeof installedInfo.revision==="string" && /^veranode-[a-z0-9.-]+$/.test(installedInfo.revision) ? installedInfo.revision : null;
+    text(revision ? "Build "+revision.slice(-8) : "Catalogo e aggiornamenti",w/2,134,13,colors.accent,0);
+    text("in Gestione su Vera App",w/2,154,13,colors.text,0);
+  }
+  function adminPage(w) {
+    var stats=sampleStats();
+    pageHeader("Elimina dati");
+    icon("memory",26,53,colors.warning);
+    text("Tutti i campioni",105,40,17,colors.warning,0,112);
+    text(String(stats.stored)+" in memoria",w/2,74,22,colors.text,0);
+    text(String(stats.pending)+" non trasferiti",w/2,102,17,colors.warning,0);
+    text("Solo amministratore",w/2,128,16,colors.text,0);
+    text("Da abilitare via Vera",w/2,149,14,colors.accent,0);
+    // Fail closed until the common Vera authorization contract is available.
+    // A local PIN, BLE pairing or a touch can never authorize destruction.
   }
   var ringPoints = [];
   for (var segment = 0; segment <= 60; segment++) {
@@ -199,8 +270,10 @@
     if (style === "still") return;
     if (style === "pulse" || style === "trace") { drawHeartEffect(); return; }
     var progress = cycleProgress(Date.now()) || 0;
+    var count = Math.floor(progress * 60), frame=count+":"+!!state.paused;
+    if(previousCycle===frame)return;
+    previousCycle=frame;
     g.setColor("#0000ff").drawPoly(ringPoints);
-    var count = Math.floor(progress * 60);
     if (count > 0) g.setColor(state.paused ? colors.warning : colors.accent).drawPoly(ringPoints.slice(0, (count + 1) * 2));
   }
   var pulseRings = [40, 42, 44, 46].map(function(radius) {
@@ -211,17 +284,23 @@
     }
     return points;
   });
+  function recentHeart() {
+    var sample=state.values.battito, now=Date.now();
+    return sample && typeof sample.value==="number" && isFinite(sample.value) &&
+      sample.value>=30 && sample.value<=240 && now>=sample.at && now-sample.at<=45000 ? sample : null;
+  }
   function drawHeartEffect() {
-    var sample = state.values.battito, now = Date.now();
-    var valid = sample && typeof sample.value === "number" && isFinite(sample.value) &&
-      sample.value >= 30 && sample.value <= 240 && now >= sample.at && now - sample.at <= 45000;
+    var sample = recentHeart(), now = Date.now(), valid=!!sample;
     var period = valid ? 60000 / sample.value : 1000;
     var elapsed = Math.max(0, now - animationEpoch);
     var phase = (elapsed % period) / period;
     if (style === "pulse") {
+      var nextPulse=valid ? Math.round(3 * Math.max(0, 1 - phase * 2)) : 0;
+      var tint=valid ? colors.heart : colors.text;
+      if(previousPulse===nextPulse && previousPulseColor===tint)return;
       if (previousPulse !== undefined) g.setColor(colors.bg).drawPoly(pulseRings[previousPulse]);
-      previousPulse = valid ? Math.round(3 * Math.max(0, 1 - phase * 2)) : 0;
-      g.setColor(valid ? colors.heart : colors.text).drawPoly(pulseRings[previousPulse]);
+      previousPulse=nextPulse; previousPulseColor=tint;
+      g.setColor(tint).drawPoly(pulseRings[previousPulse]);
       return;
     }
     // Decorative trace: no ECG sensor or invented waveform is being reported.
@@ -249,8 +328,13 @@
     g.setColor(colors.heart).fillCircle(centre, 110, 2);
 
   }
-  function text(value, x, y, size, color, align) {
-    g.setColor(color || colors.text).setFont("Vector", size).setFontAlign(align === undefined ? -1 : align, -1).drawString(String(value), x, y);
+  function text(value, x, y, size, color, align, maxWidth) {
+    value=String(value); align=align === undefined ? -1 : align;
+    var available=align===0 ? Math.min(x-4,g.getWidth()-4-x)*2 : align===1 ? x-4 : g.getWidth()-4-x;
+    if(typeof maxWidth==="number") available=Math.min(available,maxWidth);
+    g.setFont("Vector",size);
+    while(size>10 && g.stringWidth(value)>available)g.setFont("Vector",--size);
+    g.setColor(color || colors.text).setFontAlign(align,-1).drawString(value,x,y);
   }
   function box(x, y, w, h) { g.setColor(colors.surface).fillRect(x, y, x + w, y + h); }
   function heart(x, y) {
@@ -258,7 +342,7 @@
     g.fillPoly([x - 7, y, x + 7, y, x, y + 9]);
   }
   function bluetooth(x, y, connected) {
-    g.setColor(connected ? colors.accent : colors.text);
+    g.setColor(connected ? colors.accent : colors.warning);
     g.drawPoly([x, y - 8, x, y + 8, x + 6, y + 3, x - 5, y - 5]);
     g.drawPoly([x - 5, y + 5, x + 6, y - 3, x, y - 8]);
     if (!connected) g.drawPoly([x - 8, y - 9, x + 9, y + 9]);
@@ -278,7 +362,8 @@
     var security = NRF.getSecurityStatus(), connected = !!security.connected;
     var enabled = state.bleEnabled !== false;
     pageHeader("Bluetooth");
-    text(connected ? "Collegato" : enabled ? "Disponibile" : "BLE sospeso", w / 2, 34, 22, connected ? colors.accent : colors.text, 0);
+    icon("ble",25,47,connected ? colors.accent : colors.warning);
+    text(connected ? "Collegato" : enabled ? "Disponibile" : "BLE sospeso", 105, 36, 19, connected ? colors.accent : colors.warning, 0);
     var name = connected ? state.peerName || "Nome non comunicato" : "Nessun dispositivo";
     // Wrap against actual Vector-font width, not a guessed character count.
     g.setFont("Vector", 16);
@@ -319,13 +404,17 @@
       text("sul telefono", w / 2, 120, 16, colors.text, 0);
       button(8, 143, 168, 174, "Quadrante", 18); return;
     }
-    previousPulse = undefined;
+    previousPulse = undefined; previousCycle=undefined;
     if (page === "menu" && !screen.alert) { menuPage(false); return; }
     if (page === "settings" && !screen.alert) { menuPage(true); return; }
     if (page === "collection" && !screen.alert) { collectionPage(w); return; }
     if (page === "memory" && !screen.alert) { memoryPage(w); return; }
     if (page === "status" && !screen.alert) { statusPage(w); return; }
     if (page === "effects" && !screen.alert) { effectsPage(w); return; }
+    if (page === "battery" && !screen.alert) { batteryPage(w); return; }
+    if (page === "time" && !screen.alert) { timePage(w); return; }
+    if (page === "software" && !screen.alert) { softwarePage(w); return; }
+    if (page === "admin" && !screen.alert) { adminPage(w); return; }
     if (page === "bluetooth" && !screen.alert) { connectionPage(w); return; }
     if (page === "ble-confirm" && !screen.alert) {
       pageHeader("Bluetooth");
@@ -345,7 +434,7 @@
     if (battery > 0) g.setColor(colors.accent).fillRect(154, 7, 154 + Math.round(12 * battery / 100), 15);
     // Shape communicates charging even without distinguishing colours.
     if (Bangle.isCharging()) {
-      g.setColor(colors.text).fillPoly([113, 3, 107, 10, 111, 10, 109, 18, 117, 8, 113, 8]);
+      g.setColor(colors.success).fillPoly([113, 3, 107, 10, 111, 10, 109, 18, 117, 8, 113, 8]);
     }
     if (screen.alert) {
       var alert = screen.alert;
@@ -388,7 +477,7 @@
     var linked = !!NRF.getSecurityStatus().connected;
     // Three equal status columns, with icons and captions on common baselines.
     bluetooth(30, 154, linked);
-    text(linked ? "On" : "Off", 30, 165, 10, colors.text, 0);
+    text(linked ? "BLE ON" : "BLE OFF", 30, 165, 10, linked ? colors.accent : colors.warning, 0);
     g.setColor(state.storageError ? colors.warning : colors.text).drawRect(82, 146, 94, 157);
     g.drawPoly([84, 150, 92, 150]); g.drawPoly([84, 153, 92, 153]);
     text(node.samples ? node.samples.pending() : "--", 88, 165, 10, colors.text, 0);
@@ -430,6 +519,7 @@
   function complete() { cues.stop(); ui.closeAlert(); interaction = null; startAnimation(ui.mode !== "off"); update(); }
   function update() {
     if (disposed) return;
+    startAnimation(ui.mode !== "off");
     // A pending authorization must not be hidden behind a local alert. The
     // runtime still owns that alert and will present it again after the choice.
     if (state.consent && ui.alert && ui.alert.channel !== "consent") {
@@ -503,6 +593,7 @@
     swipe: function(direction, vertical) {
       if (ui.mode === "off" || ui.alert) return;
       renewIdle();
+      if (page === "settings" && vertical) {systemIndex=Math.max(0,Math.min(systemItems.length-2,systemIndex+(vertical<0?1:-1)));draw(ui);return;}
       if (page === "menu" && vertical) {menuIndex=Math.max(0,Math.min(menuItems.length-2,menuIndex+(vertical<0?1:-1)));draw(ui);return;}
       if (page === "effects" && direction) { candidate = (candidate + (direction < 0 ? 1 : styles.length - 1)) % styles.length; draw(ui); return; }
       if (vertical === -1 && page === "clock") openPage("effects");
@@ -521,15 +612,17 @@
         if (page === "consent-ended" && inside(point, 8, 143, 168, 174)) {
           consentEnded = false; home(); return;
         }
+        if (page === "clock" && inside(point,116,0,175,27)) { openPage("battery"); return; }
+        if (page === "clock" && inside(point,44,30,132,119)) { openPage("effects"); return; }
+        if (page === "clock" && inside(point,40,121,155,141)) { openPage("collection"); return; }
         if (page === "clock" && inside(point, 0, 0, 58, 28)) { openPage("menu"); return; }
         if (page === "menu") {
           for(var m=0;m<2;m++)if(inside(point,8,35+m*58,168,85+m*58)){openPage(menuItems[menuIndex+m].page);return;}
           return;
         }
         if (page === "settings") {
-          var targets=["effects","status","clock"];
-          for(var i=0;i<targets.length;i++) if(inside(point,8,36+i*47,168,75+i*47)) {
-            if(targets[i] === "clock")home();else openPage(targets[i]);return;
+          for(var i=0;i<2;i++) if(inside(point,8,35+i*58,168,85+i*58)) {
+            openPage(systemItems[systemIndex+i].page);return;
           }
           return;
         }
@@ -543,7 +636,7 @@
           return;
         }
         if (page === "memory") {
-          if (inside(point, 8, 134, 168, 174)) back();
+          if (inside(point, 8, 137, 168, 174)) openPage("admin");
           return;
         }
         if (page === "effects") {
@@ -559,6 +652,8 @@
           draw(ui);
         } else if (page === "bluetooth") {
           if (inside(point, 8, 118, 168, 156)) {if(state.bleEnabled !== false)openPage("ble-confirm");else toggleConnections();}
+        } else if (["admin","time","software","battery"].includes(page)) {
+          return;
         } else if (page !== "clock") {
           if (inside(point, 8, 134, 168, 174)) back();
         } else if (point.y >= 142 && point.y <= 175) {

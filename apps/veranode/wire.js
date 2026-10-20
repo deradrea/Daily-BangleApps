@@ -92,7 +92,8 @@ exports.create = function(env) {
       if (req.op === "status") {
         var snapshot = {version: "0.2.0", mac: env.mac, revision: state.policy ? state.policy.revision : null,
           sampleEpoch: node.samples.checkpoint.epoch, sampleHigh: node.samples.next - 1,
-          sampleAck: node.samples.checkpoint.ack, eventEpoch: node.events.checkpoint.epoch,
+          sampleAck: node.samples.checkpoint.ack, sampleDiscardedThrough: node.samples.checkpoint.discardedThrough || 0,
+          sampleAdministrativePending: !!node.samples.eraseLock, eventEpoch: node.events.checkpoint.epoch,
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
           live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory}};
         if (node.timeHistory) {

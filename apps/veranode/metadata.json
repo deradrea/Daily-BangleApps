@@ -14,7 +14,10 @@
   "allow_emulator": true,
   "readme": "README.md",
   "storage": [
-    {"name": "veranode.clock.js", "url": "clock.js"},
+    {
+      "name": "veranode.clock.js",
+      "url": "clock.js"
+    },
     {
       "name": "veranode.app.js",
       "url": "app.js"
@@ -42,12 +45,25 @@
     }
   ],
   "data": [
-    {"name": "veranode.time.json"},
-    {"wildcard": "veranode.t?idx"},
-    {"wildcard": "veranode.t?", "storageFile": true},
-    {"name": "veranode.tack0"},
-    {"name": "veranode.tack1"},
-    {"name": "veranode.ble.json"},
+    {
+      "name": "veranode.time.json"
+    },
+    {
+      "wildcard": "veranode.t?idx"
+    },
+    {
+      "wildcard": "veranode.t?",
+      "storageFile": true
+    },
+    {
+      "name": "veranode.tack0"
+    },
+    {
+      "name": "veranode.tack1"
+    },
+    {
+      "name": "veranode.ble.json"
+    },
     {
       "wildcard": "veranode.s?idx"
     },
@@ -88,6 +104,20 @@
     },
     {
       "name": "veranode.face.json"
+    },
+    {
+      "wildcard": "veranode.s??idx"
+    },
+    {
+      "wildcard": "veranode.s??",
+      "storageFile": true
+    },
+    {
+      "wildcard": "veranode.s???idx"
+    },
+    {
+      "wildcard": "veranode.s???",
+      "storageFile": true
     }
   ]
 }

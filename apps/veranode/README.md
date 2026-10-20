@@ -222,3 +222,14 @@ Startup is now transactional: an HRM startup exception or scheduling failure rol
 Initialization must validate MAC, exact file hashes, app name, boot failure status AND health: running/scheduled/hrmRequested true, tickCount >= 1, maintenancePaused/recordingBlocked false, startError null. This validates collector startup, not physical sensor accuracy. A numeric heart reading must not be invented or required from an unworn watch. A deliberate maintenance pause is a distinct state, not active recording.
 
 The software integration test executes boot, clock UI and modules decoded from the generated package; it checks HRM and temperature ingestion, offline journal continuation, unchanged legacy frames, UI removal, BLE disconnection and explicit pause/resume. These are simulated hardware tests. No physical watch was accessed, reset, updated or cleared during this audit; no 24-hour trial was started. The previous Web `signal timed out` report did not identify a failing phase, so it cannot be attributed conclusively to this startup defect. Web owns wizard diagnostics, deployment and catalog revocation/promotion. Candidates remain test-only and hardwareValidated=false.
+
+
+## Candidato UI e revisione del 20 ottobre 2026
+
+Il candidato locale `veranode-0.2.0-dev-89e15f0bf2380395` conserva il formato dei campioni e dei frame BLE. Include pagine interne riviste, quadranti selezionabili, dettagli batteria, inventario di avvio indicizzato e ACK duplicati senza riscrittura del checkpoint. I metadata comprendono i segmenti con indice fino a 511.
+
+Generazione: `node bin/build-veranode-release.cjs`. Il builder produce un pacchetto immutabile con otto file, registry e inventario dati, provenienza, licenza e SHA-256. Verificare il risultato anche con il parser dell'app (`vera-mobile/flutter-app/tool/verify_bangle_candidate.dart`) prima di proporlo al catalogo condiviso.
+
+Questo candidato rimane di sviluppo, first-install-only e non collaudato fisicamente. Non sostituisce il pacchetto c212 già approvato, non autorizza upgrade conservativi o reset e non abilita la cancellazione amministrativa. Il PIN personale viene gestito da Vera Web; autorizzazione verificabile dal Bangle, transazione di cancellazione e modello di accesso UART restano blocchi espliciti. Nessun PIN predefinito o locale può sostituirli.
+
+Rapporto completo: `vera-mobile/docs/BANGLE-REVISIONE-CANDIDATO-2026-10-20.md`. Il collaudo fisico di 24 ore rimane sospeso.

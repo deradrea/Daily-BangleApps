@@ -1,0 +1,8 @@
+{
+  "sourceRepository": null,
+  "sourceRevision": "veranode-0.2.0-dev-c212c94f912d9864",
+  "packageSha256": "838057b1fa2260cfc816f6db83b75649622017681ca971b4fa3a5dba0fa8e562",
+  "coreSha256": "69e80234d658e06538ac0421a4bdc795c90c214701255293ba21213aeec17dab",
+  "purpose": "legacy-journal-compatibility-fixture-only",
+  "license": "MIT"
+}

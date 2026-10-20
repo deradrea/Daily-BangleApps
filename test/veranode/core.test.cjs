@@ -321,3 +321,29 @@ test('append capacity accounts for partial acknowledgements, sealed segments and
  for(let i=0;i<8;i++) reboot.append('sample',i,{});
  assert.equal(reboot.stats().full,true);assert.equal(reboot.stats().available,0);
 });
+
+
+test('startup indexes each inventory once instead of repeated linear filename searches',()=>{
+ const store=new MemoryStorage(), original=new core.Journal(store,'s',{maxSegments:92,segmentRecords:1});
+ for(let i=0;i<92;i++) original.append('sample',i,{bpm:72});
+ const files=store.list(undefined,{sf:true});
+ files.includes=()=>{throw Error('Repeated linear inventory search');};
+ const recovered=new core.Journal(store,'s',{maxSegments:8,segmentRecords:1,files});
+ assert.equal(recovered.pending(),92);assert.equal(recovered.segments.length,92);
+ assert.deepEqual(recovered.readBatch(88,4).map(r=>r.seq),[89,90,91,92]);
+});
+
+test('duplicate custody ACK avoids flash writes and retries pruning after interrupted erase',()=>{
+ const store=new MemoryStorage(), journal=new core.Journal(store,'s',{maxSegments:2,segmentRecords:1});
+ journal.append('sample',10,{});journal.append('sample',20,{});
+ let writes=0,failOnce=true;const write=store.write.bind(store),open=store.open.bind(store);
+ store.write=(...args)=>{writes++;return write(...args);};
+ store.open=(...args)=>{const file=open(...args),erase=file.erase;file.erase=()=>{if(failOnce){failOnce=false;throw Error('Interrupted erase');}erase();};return file;};
+ assert.throws(()=>journal.ack(journal.checkpoint.epoch,2),/Interrupted erase/);
+ assert.equal(writes,1);assert.equal(journal.checkpoint.ack,2);
+ journal.ack(journal.checkpoint.epoch,2);assert.equal(store.files.size,0);
+ for(let i=0;i<20;i++)journal.ack(journal.checkpoint.epoch,2);
+ assert.equal(writes,1);assert.equal(journal.pending(),0);
+ const reboot=new core.Journal(store,'s',{maxSegments:2,segmentRecords:1});
+ assert.equal(reboot.append('sample',30,{}).seq,3);
+});
