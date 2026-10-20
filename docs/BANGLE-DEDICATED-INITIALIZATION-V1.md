@@ -59,3 +59,20 @@ Questa revisione e storica: il successivo controllo indipendente ha rilevato una
 Il sistema base viene costruito da `git show <sourceCommit>:<path>`, non dai byte CRLF del checkout Windows. `baseSources.sourceState` e `git-tree`. Il decoder di icone e nel submodule ufficiale: `baseSources.externalSources['webtools/heatshrink.js']` dichiara repository, commit, path e SHA256. Il suo commit deve corrispondere al gitlink `webtools` del commit radice. Tutti i 23 input sono stati verificati come Git blob esatti, senza normalizzazione nel consumer.
 
 Il provider riconosce solamente i digest LF e CRLF dichiarati dello stesso bootloader e bootupdate standard. Il target usa i sorgenti Git ufficiali LF; non ammette altri bootloader. Il recupero avvia la propria UI da `.boot0`, anche se `.bootcde` non puo essere eseguito, mantenendo UART per riprendere il piano. Il test di questa condizione e in VM, non su hardware.
+
+
+## Binding di manutenzione senza assegnazione — 20 ottobre 2026
+
+Nuova revisione immutabile: protocollo comandi 1 invariato, bindingContract versione 2.
+Il binding assegnato storico continua a richiedere assignment intero positivo.
+La manutenzione di un dispositivo non assegnato usa esattamente i campi:
+`{bindingVersion:2,scope:"device-maintenance",deviceId:97,assignment:null,operationId,mac,packageSha256}`.
+L'ID del dispositivo è l'identità canonica Vera, non un'assegnazione inventata.
+Scope/versione/deviceId mancanti, assignment 0 o storico, campi aggiuntivi e contesti misti vengono rifiutati prima dell'isolamento.
+Il provider conserva confronto canonico dell'intero binding per piano e ripresa; non converte journal esistenti.
+
+L'autorizzazione resta nel consumer/server: amministratori piattaforma su tutti i dispositivi, amministratori aziendali nel proprio ambito, utenti sui propri dispositivi secondo policy Vera corrente. Il binding non è una firma né un'autorizzazione autonoma dell'orologio. BLE cifrato, consenso fisico, piano verificato e grant del consumer restano necessari. Il profilo operativo approvato resta separato e non viene fabbricato per un dispositivo senza utente.
+
+Per una vecchia pratica PREPLAN il consumer deve mantenere request_hash e snapshot originali immutabili, registrare un execution_context di manutenzione distinto e auditato, revocare grant precedenti, verificare inventario fresco e assenza di journal/piano/apply. Dopo staging/apply è vietato cambiare binding o riutilizzare un'altra assegnazione; si completa la stessa operazione. Questa revisione non autorizza reset, cancellazioni ripetute o migrazioni automatiche sul device.
+
+Runtime target, JSON campioni e i 22 file di destinazione sono identici al pacchetto4652. Cambiano validatore bootstrap e metadati del contratto. La pubblicazione non costituisce installazione hardware o esito di collaudo.

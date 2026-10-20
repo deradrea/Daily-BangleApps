@@ -27,7 +27,8 @@ function build(output=path.join(root,'dist/veranode-initialize')){
   const manifest={schemaVersion:1,sourceRepository:'https://github.com/deradrea/Daily-BangleApps',sourceCommit:base.sourceCommit,files:inputs,runtimePackageSha256:sha(raw),baseSourceManifestSha256:base.sourceManifestSha256,
     baseSources:JSON.parse(fs.readFileSync(path.join(path.dirname(baseResult.path),'source-manifest.json')))};
   const manifestBytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n');
-  const bundle={schema:'vera-bangle-dedicated-initialize/1',board:'BANGLEJS2',firmware:['2v29'],mode:'dedicated-initialization',
+  const bindingContract={version:2,legacyAssigned:true,maintenance:{bindingVersion:2,scope:'device-maintenance',assignment:null,deviceIdRequired:true},authorization:'server-maintenance-policy',profileBinding:'separate'};
+  const bundle={bindingContract,schema:'vera-bangle-dedicated-initialize/1',board:'BANGLEJS2',firmware:['2v29'],mode:'dedicated-initialization',
     preservesFirmware:true,erasesUserData:true,removesNonessentialApps:true,home:'veranode.app.js',hardwareValidated:false,
     authorization:{enforcement:'consumer',deviceVerified:false,physicalConsent:true,encryptedBle:true},
     sourceRepository:manifest.sourceRepository,sourceManifestSha256:sha(manifestBytes),runtimeRevision:runtime.revision,runtimePackageSha256:sha(raw),
@@ -40,7 +41,7 @@ function build(output=path.join(root,'dist/veranode-initialize')){
     license:runtime.license};
   const bytes=Buffer.from(JSON.stringify(bundle,null,2)+'\n'),hash=sha(bytes),revision='veranode-initialize-1-'+hash.slice(0,16),dest=path.join(output,revision);
   fs.mkdirSync(dest,{recursive:true});
-  const descriptor={schema:'vera-bangle-initialize-descriptor/1',revision,sha256:hash,size:bytes.length,board:bundle.board,firmware:bundle.firmware,
+  const descriptor={bindingContract,schema:'vera-bangle-initialize-descriptor/1',revision,sha256:hash,size:bytes.length,board:bundle.board,firmware:bundle.firmware,
     hardwareValidated:false,sourceRepository:bundle.sourceRepository,mode:bundle.mode,home:bundle.home,targetFingerprint:fingerprint};
   for(const [name,data] of [['initialize.json',bytes],['descriptor.json',Buffer.from(JSON.stringify(descriptor,null,2)+'\n')],['source-manifest.json',manifestBytes]]){
     const f=path.join(dest,name);if(fs.existsSync(f)){if(!fs.readFileSync(f).equals(data))throw Error('Immutable conflict');}else fs.writeFileSync(f,data,{flag:'wx'});

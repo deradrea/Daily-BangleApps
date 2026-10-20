@@ -20,7 +20,7 @@ function fixture(providerCreate=create){
     unbase64:s=>Buffer.from(s,'base64').toString('latin1'),progress:(...p)=>progress.push(p),settings:()=>JSON.parse(normal.get('setting.json')),
     health:()=>health,activate:()=>activated++,restoreBoot:()=>restore++};
   let provider=providerCreate(env);
-  function ready(){provider.prepare(binding);const plan=provider.plan();files.forEach((f,i)=>provider.stage(i,0,f.size,Buffer.from(payload[f.name],'latin1').toString('base64')));provider.setConsent(true);return plan;}
+  function ready(context=binding){provider.prepare(context);const plan=provider.plan();files.forEach((f,i)=>provider.stage(i,0,f.size,Buffer.from(payload[f.name],'latin1').toString('base64')));provider.setConsent(true);return plan;}
   return {env,normal,sf,payload,files,progress,mutations,ready,get p(){return provider;},reboot(){provider=providerCreate(env);},set crash(x){crash=x;},set encrypted(x){encrypted=x;},set mac(x){localMac=x;},set health(x){health=x;},get stored(){return stored;},get activated(){return activated;},get restore(){return restore;}};
 }
 test('real dynamic plan distinguishes foreign software, data and original profile; first stages all targets',()=>{
@@ -198,5 +198,64 @@ test('every initializer input and bootstrap source matches the declared Git tree
    const raw=cp.execFileSync('git',['show',m.sourceCommit+':initialization/veranode/'+source],{cwd:path.resolve(__dirname,'../..')});
    assert.equal(Buffer.from(built.bundle.bootstrap.find(f=>f.name===name).base64,'base64').equals(raw),true,name);
   }
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+const maintenanceBinding={...binding,bindingVersion:2,scope:'device-maintenance',deviceId:97,assignment:null};
+
+test('unassigned maintenance preserves explicit binding through interrupted apply and recovery',()=>{
+ const f=fixture(),plan=f.ready(maintenanceBinding);
+ assert.equal(f.p.status().binding.assignment,null);
+ f.crash='erase';assert.throws(()=>f.p.apply(plan.planHash),/power lost/);
+ const erased=f.mutations.find(n=>n.startsWith('erase:'));
+ f.reboot();f.p.recover(maintenanceBinding);
+ assert.throws(()=>f.p.apply(plan.planHash),/Consenso/);
+ f.p.setConsent(true);
+ while(f.p.status().phase!=='verified')f.p.apply(plan.planHash);
+ assert.equal(f.mutations.filter(n=>n===erased).length,1,'interrupted deletion is not repeated');
+ f.p.verify();f.p.activate();f.health={running:true,scheduled:true,hrmRequested:true};
+ assert.deepEqual(f.p.confirm().binding,maintenanceBinding);
+ assert.equal(f.sf.size,0);
+});
+
+test('unassigned binding requires explicit maintenance scope, version and canonical device identity before isolation',()=>{
+ const invalid=[{assignment:null},{...maintenanceBinding,bindingVersion:undefined},{...maintenanceBinding,bindingVersion:1},
+  {...maintenanceBinding,scope:'profile'},{...maintenanceBinding,scope:undefined},{...maintenanceBinding,deviceId:undefined},
+  {...maintenanceBinding,deviceId:0},{...maintenanceBinding,deviceId:-1},{...maintenanceBinding,deviceId:1.5},
+  {...maintenanceBinding,deviceId:'97'},{...maintenanceBinding,deviceId:NaN},{...maintenanceBinding,deviceId:Infinity},
+  {...maintenanceBinding,deviceId:9007199254740992},{...maintenanceBinding,assignment:147},
+  {...maintenanceBinding,assignment:0},{...maintenanceBinding,assignment:undefined},{...maintenanceBinding,companyId:2}];
+ for(const override of invalid){const f=fixture();assert.throws(()=>f.p.prepare({...binding,...override}),/Contesto/);
+  assert.equal(f.stored,null);assert.equal(f.normal.get('.boot0'),'original boot');assert.equal(f.mutations.length,0);}
+});
+
+test('maintenance cannot rebind a legacy journal or resume under another identity or package',()=>{
+ const legacy=fixture();legacy.p.prepare(binding);
+ assert.throws(()=>legacy.p.prepare(maintenanceBinding),/Operazione precedente/);
+ assert.deepEqual(legacy.stored.binding,binding);
+ const f=fixture();f.ready(maintenanceBinding);f.reboot();
+ for(const next of [binding,{...maintenanceBinding,deviceId:98},{...maintenanceBinding,operationId:'99999999-1234-4234-8234-123456789abc'},
+  {...maintenanceBinding,packageSha256:'b'.repeat(64)},{...maintenanceBinding,assignment:147}]){
+  assert.throws(()=>f.p.recover(next),/contesto/);
+ }
+ assert.equal(f.mutations.some(n=>n.startsWith('erase:')),false);
+ f.p.recover(maintenanceBinding);assert.deepEqual(f.p.status().binding,maintenanceBinding);
+});
+
+test('maintenance binding retains encrypted transport and fresh physical consent gates',()=>{
+ const f=fixture();f.encrypted=false;assert.throws(()=>f.p.prepare(maintenanceBinding),/cifrato/);assert.equal(f.stored,null);
+ f.encrypted=true;f.ready(maintenanceBinding);f.p.setConsent(false);
+ assert.throws(()=>f.p.apply(f.stored.planHash),/Consenso/);assert.equal(f.mutations.some(n=>n.startsWith('erase:')),false);
+ f.p.setConsent(true);f.encrypted=false;
+ assert.throws(()=>f.p.apply(f.stored.planHash),/cifrato/);assert.equal(f.mutations.some(n=>n.startsWith('erase:')),false);
+});
+
+test('published descriptor declares maintenance binding while target runtime stays identical to 4652',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vera-maint-binding-'));
+ try{const built=build(dir),old=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../dist/veranode-initialize/veranode-initialize-1-46527ffbad6b154e/initialize.json')));
+  assert.equal(built.bundle.bindingContract.maintenance.assignment,null);
+  assert.equal(built.bundle.bindingContract.maintenance.deviceIdRequired,true);
+  assert.deepEqual(built.descriptor.bindingContract,built.bundle.bindingContract);
+  assert.deepEqual(built.bundle.target,old.target);assert.equal(built.bundle.runtimePackageSha256,old.runtimePackageSha256);
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

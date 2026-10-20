@@ -4,9 +4,17 @@ exports.create = function(e) {
   function fail(s){throw Error(s);}
   function integer(n){return typeof n==='number'&&isFinite(n)&&Math.floor(n)===n;}
   function same(a,b){return e.canonical(a)===e.canonical(b);}
-  function valid(b){return b && typeof b.mac==='string'&&b.mac.length===17&&/^[A-F0-9:]+$/.test(b.mac)&&b.mac.split(':').length===6&&b.mac.split(':').every(function(p){return p.length===2;}) &&
-    typeof b.packageSha256==='string'&&b.packageSha256.length===64&&/^[a-f0-9]+$/.test(b.packageSha256) && typeof b.operationId==='string' &&
-    b.operationId.length>=16&&b.operationId.length<=80&&/^[a-zA-Z0-9-]+$/.test(b.operationId) && integer(b.assignment) && b.assignment>0;}
+  function valid(b){
+    if(!b || typeof b.mac!=='string'||b.mac.length!==17||!/^[A-F0-9:]+$/.test(b.mac)||b.mac.split(':').length!==6||!b.mac.split(':').every(function(p){return p.length===2;}) ||
+      typeof b.packageSha256!=='string'||b.packageSha256.length!==64||!/^[a-f0-9]+$/.test(b.packageSha256) || typeof b.operationId!=='string' ||
+      b.operationId.length<16||b.operationId.length>80||!/^[a-zA-Z0-9-]+$/.test(b.operationId))return false;
+    if(b.bindingVersion!==undefined||b.scope!==undefined||b.deviceId!==undefined){
+      var keys=['assignment','bindingVersion','deviceId','mac','operationId','packageSha256','scope'];
+      return b.bindingVersion===2&&b.scope==='device-maintenance'&&b.assignment===null&&integer(b.deviceId)&&b.deviceId>0&&b.deviceId<=9007199254740991&&
+        Object.keys(b).length===keys.length&&Object.keys(b).every(function(k){return keys.includes(k);});
+    }
+    return integer(b.assignment)&&b.assignment>0;
+  }
   function connected(){if(!e.encrypted())fail('Collegamento cifrato necessario: conferma associazione sul telefono');}
   function guard(){connected();if(!state || e.mac()!==state.binding.mac || !e.isolated())fail('Preparazione isolata necessaria');}
   function save(){e.save(state);}
