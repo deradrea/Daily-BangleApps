@@ -28,7 +28,8 @@ function build(output=path.join(root,'dist/veranode-initialize')){
     sourceRepository:manifest.sourceRepository,sourceManifestSha256:sha(manifestBytes),runtimeRevision:runtime.revision,runtimePackageSha256:sha(raw),
     targetFingerprint:fingerprint,canonicalization:'sorted-object-keys-json/1',limits:{chunkBytes:384,maxInventory:128,maxStorageFileBytes:65536,maxPlanBytes:32768},
     recovery:{protocol:1,journal:['verai.state0','verai.state1'],strategy:'complete-same-plan-from-verified-staging',rollbackDeletedData:false,
-      internalPrefix:'verai.',generatedExclusions:['.widcache','.clkinfocache'],unsupportedBoot:['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst','.varimg']},
+      internalFiles:bootstrap.map(f=>f.name).concat(['verai.state0','verai.state1','verai.plan','verai.oldboot','verai.oldhash']),stagingFiles:target.map((_f,i)=>'verai.f'+i),
+      generatedExclusions:['.widcache','.clkinfocache'],unsupportedBoot:['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst','.varimg']},
     bootstrap,target:{files:target,stagingBytes:targetModule.stagingBytes,bootloaderSha256:targetModule.bootloaderSha256,bootupdateSha256:targetModule.bootupdateSha256},
     license:runtime.license};
   const bytes=Buffer.from(JSON.stringify(bundle,null,2)+'\n'),hash=sha(bytes),revision='veranode-initialize-1-'+hash.slice(0,16),dest=path.join(output,revision);
