@@ -168,3 +168,19 @@ test('device bootstrap cannot introduce unsupported Number predicates',()=>{
   assert.equal(/Number\s*\.\s*(?:isInteger|isFinite|isSafeInteger)\s*\(/.test(text),false,name);
  }
 });
+
+
+test('54ee failure is reproduced before journal/isolation and corrected provider reuses the same device environment without reset',()=>{
+ const bundle=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../dist/veranode-initialize/veranode-initialize-1-54eef6a1037274d8/initialize.json')));
+ const old=Buffer.from(bundle.bootstrap.find(f=>f.name==='verai.provider.js').base64,'base64').toString();
+ const context=vm.createContext({exports:{}});vm.runInContext('Number.isInteger=undefined;',context);vm.runInContext(old,context);
+ const f=fixture(context.exports.create);
+ assert.throws(()=>f.p.prepare(binding),/isInteger/);assert.equal(f.stored,null);assert.equal(f.mutations.length,0);
+ assert.equal(f.normal.get('.boot0'),'original boot');assert.equal(f.sf.size,1);
+ context.exports={};vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/provider.js'),'utf8'),context);
+ const corrected=context.exports.create(f.env),next={...binding,packageSha256:'b'.repeat(64)};
+ assert.equal(corrected.status().phase,'unprepared');corrected.prepare(next);
+ assert.equal(corrected.status().binding.operationId,binding.operationId);assert.equal(corrected.status().binding.packageSha256,next.packageSha256);
+ assert.equal(f.sf.size,1);assert.equal(f.normal.get('foreign.app.js'),'foreign code');
+ assert.equal(corrected.plan().removeApps.length,2);
+});
