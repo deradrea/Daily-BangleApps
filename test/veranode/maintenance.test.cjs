@@ -70,3 +70,9 @@ test('cancel before software writes resumes collector; partial replacement requi
  const f=fixture(),{m,t}=start(f);assert.equal(m.end(t).resumeRequested,true);assert.equal(f.saved.phase,'rolled-back');
  const partial=fixture(),session=start(partial);write(session.m,session.t,names[0],'new-'+names[0]);assert.throws(()=>session.m.cancelLocally(),/recupero/);assert.equal(partial.activated,false);
 });
+test('paged inventory fits UART response bounds and returns a stable complete archive',()=>{
+ const f=fixture();for(let i=0;i<200;i++)f.data.set('veranode.s'+(i+1),'small');
+ const {m,t}=start(f),rows=[];let offset=0,total=0;
+ do{const page=m.inventoryPage(t,offset,32);assert.ok(JSON.stringify(page).length<12000);assert.equal(page.offset,offset);rows.push(...page.files);offset=page.next;total=page.total;}while(offset<total);
+ assert.equal(rows.length,211);assert.equal(new Set(rows.map(f=>f.kind+':'+f.name)).size,rows.length);
+});

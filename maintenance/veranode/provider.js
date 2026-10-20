@@ -61,6 +61,14 @@ exports.create = function(env) {
   }
   function renew(token,ttl) { guard(token);if(!Number.isInteger(ttl)||ttl<1||ttl>60000)fail('Durata non valida');expires=env.now()+ttl;return response(); }
   function inventory(token) { guard(token);recover();var rows=inventoryRows();unchanged(rows);rowsCache=rows;return {token:lease,snapshot:state.snapshot,isolated:true,binding:state.binding,files:rows}; }
+  function inventoryPage(token,offset,limit) {
+    guard(token);
+    if(!Number.isInteger(offset)||!Number.isInteger(limit)||offset<0||limit<1||limit>32)fail('Pagina inventario non valida');
+    if(offset===0)inventory(token);
+    if(!rowsCache||offset>rowsCache.length)fail('Inventario da rileggere');
+    return {token:lease,snapshot:state.snapshot,isolated:true,binding:state.binding,offset:offset,
+      next:Math.min(offset+limit,rowsCache.length),total:rowsCache.length,files:rowsCache.slice(offset,offset+limit)};
+  }
   function read(token, descriptor, offset, length) {
     guard(token);if(!rowsCache)rowsCache=inventoryRows();var f=rowsCache.find(function(r){return r.kind===descriptor.kind&&r.name===descriptor.name;});
     if (!f || !same(f,descriptor) || !Number.isInteger(offset)||!Number.isInteger(length)||offset<0||length<1||length>512||offset+length>f.size) fail('Blocco non valido');
@@ -105,5 +113,5 @@ exports.create = function(env) {
   }
   // Recovery is possible without an active BLE lease; no acquisition starts here.
   recover();
-  return {protocol:1,begin:begin,renew:renew,inventory:inventory,read:read,replaceSoftware:replaceSoftware,end:end,activate:activate,cancelLocally:cancelLocally};
+  return {protocol:1,begin:begin,renew:renew,inventory:inventory,inventoryPage:inventoryPage,read:read,replaceSoftware:replaceSoftware,end:end,activate:activate,cancelLocally:cancelLocally};
 };

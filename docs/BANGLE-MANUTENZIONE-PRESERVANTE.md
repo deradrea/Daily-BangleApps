@@ -49,7 +49,7 @@ con gli hash di `bootupdate.js` e `.bootcde`. Altri bootloader non vengono sovra
 
 ## Prove e stato
 
-Suite Node locale: 137 test passati, inclusi codice reale del provider,
+Suite Node locale: 138 test passati, inclusi codice reale del provider,
 piattaforma Storage, guardia boot, due slot, bytes binari e conferma finale.
 Compatibilita del journal c212 verificata con fixture offline; JSON/CRC invariati.
 Queste prove non certificano durata batteria, alimentazione interrotta reale,
@@ -67,3 +67,6 @@ verifica d'integrazione. Il collaudo fisico delle 24 ore resta sospeso.
 - https://www.espruino.com/ReferenceBANGLEJS2 (Storage, StorageFile, crypto SHA256)
 - https://www.espruino.com/Saving (load e codice in Flash)
 - `apps/boot/bootupdate.js` e `bootloader.js` del repository, hash nel manifesto.
+
+Inventario BLE paginato in blocchi di massimo 32 voci per rispettare il limite
+delle risposte UART anche con molti segmenti offline.
