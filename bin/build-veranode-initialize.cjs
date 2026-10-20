@@ -1,5 +1,5 @@
 /* Canonical dedicated installer. Never connects to hardware. */
-const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),acorn=require('acorn');
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),acorn=require('acorn'),cp=require('node:child_process');
 const root=path.resolve(__dirname,'..'),sha=x=>crypto.createHash('sha256').update(x).digest('hex');
 const canonical=x=>Array.isArray(x)?'['+x.map(canonical).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canonical(x[k])).join(',')+'}':JSON.stringify(x);
 function build(output=path.join(root,'dist/veranode-initialize')){
@@ -19,10 +19,11 @@ function build(output=path.join(root,'dist/veranode-initialize')){
     targetModule[field]=[...new Set([sha(Buffer.from(raw)),sha(Buffer.from(raw.replace(/\r?\n/g,'\r\n')))])];
   }
   const inputs={};
+  const committed=relative=>cp.execFileSync('git',['show',base.sourceCommit+':'+relative],{cwd:root});
   const bootstrap=[['verai.provider.js','provider.js'],['verai.platform.js','platform.js'],['verai.recovery.js','recovery.js'],['verai.0.boot.js','guard.js'],['verai.app.js','app.js']].map(([name,source])=>{
-    const bytes=fs.readFileSync(path.join(root,'initialization/veranode',source));acorn.parse(bytes.toString(),{ecmaVersion:2015});inputs['initialization/veranode/'+source]=sha(bytes);return file(name,bytes);});
+    const bytes=committed('initialization/veranode/'+source);acorn.parse(bytes.toString(),{ecmaVersion:2015});inputs['initialization/veranode/'+source]=sha(bytes);return file(name,bytes);});
   bootstrap.push(file('verai.target.js',Buffer.from('exports='+JSON.stringify(targetModule)+';\n')));
-  inputs['bin/build-veranode-initialize.cjs']=sha(fs.readFileSync(__filename));
+  inputs['bin/build-veranode-initialize.cjs']=sha(committed('bin/build-veranode-initialize.cjs'));
   const manifest={schemaVersion:1,sourceRepository:'https://github.com/deradrea/Daily-BangleApps',sourceCommit:base.sourceCommit,files:inputs,runtimePackageSha256:sha(raw),baseSourceManifestSha256:base.sourceManifestSha256,
     baseSources:JSON.parse(fs.readFileSync(path.join(path.dirname(baseResult.path),'source-manifest.json')))};
   const manifestBytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n');

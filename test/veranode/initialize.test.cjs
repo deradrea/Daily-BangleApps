@@ -184,3 +184,19 @@ test('54ee failure is reproduced before journal/isolation and corrected provider
  assert.equal(f.sf.size,1);assert.equal(f.normal.get('foreign.app.js'),'foreign code');
  assert.equal(corrected.plan().removeApps.length,2);
 });
+
+
+test('every initializer input and bootstrap source matches the declared Git tree bytes exactly',()=>{
+ const cp=require('node:child_process'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'vera-git-init-'));
+ try{
+  const built=build(dir),m=JSON.parse(fs.readFileSync(path.join(path.dirname(built.path),'source-manifest.json')));
+  for(const [name,expected]of Object.entries(m.files)){
+   const raw=cp.execFileSync('git',['show',m.sourceCommit+':'+name],{cwd:path.resolve(__dirname,'../..')});
+   assert.equal(crypto.createHash('sha256').update(raw).digest('hex'),expected,name);
+  }
+  for(const [name,source]of [['verai.provider.js','provider.js'],['verai.platform.js','platform.js'],['verai.recovery.js','recovery.js'],['verai.0.boot.js','guard.js'],['verai.app.js','app.js']]){
+   const raw=cp.execFileSync('git',['show',m.sourceCommit+':initialization/veranode/'+source],{cwd:path.resolve(__dirname,'../..')});
+   assert.equal(Buffer.from(built.bundle.bootstrap.find(f=>f.name===name).base64,'base64').equals(raw),true,name);
+  }
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
