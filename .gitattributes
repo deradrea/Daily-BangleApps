@@ -6,3 +6,7 @@ dist/veranode/** -text
 bin/build-veranode-release.cjs -text
 experimental/veranode-administration/** -text
 test/veranode/fixtures/** -text
+# Preserving-upgrade artifacts hash exact bytes, as do first-install releases.
+maintenance/veranode/** -text
+bin/build-veranode-upgrade.cjs -text
+dist/veranode-upgrade/** -text
