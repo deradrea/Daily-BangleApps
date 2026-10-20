@@ -48,7 +48,13 @@ Release storica: `veranode-initialize-1-54eef6a1037274d8`, SHA256 `54eef6a103727
 
 ## Correzione canonica d335
 
+Questa revisione e storica: il successivo controllo indipendente ha rilevato una discrepanza CRLF/LF nella provenienza del provider. Non catalogare d335; usare4652 seguente.
+
 `veranode-initialize-1-d335c6ff747279b3`, SHA256 `d335c6ff747279b30ccf8d16cdc9917218fa0b6bc0f44b2c3eee2b07aff0a382`, 263364byte. Sorgenti6f93a2f4f, tagcacb08637. Corregge Number.isInteger non disponibile nel provider, senza cambiare target22file, JSON o runtime. 156 test software passati, incluso errore54ee riprodotto e ciclo completo senza Number.isInteger. Per operazioni interrotte, non basta cambiare il catalogo: vedere [confini della riparazione](BANGLE-INITIALIZE-ESPRUINO-2V29-FIX.md). Nessuna esecuzione hardware da questa chat.
+
+## Release canonica corrente 4652
+
+`veranode-initialize-1-46527ffbad6b154e`, SHA256 `46527ffbad6b154e5a0ebba41c7feeb7b1eba986a74d7b533e43f4077ebfe28b`, 263208byte. Sorgenti37b16985c, taga0b012b87. Corregge la compatibilita numerica e legge tutti gli input del bootstrap con git show del commit dichiarato. 157 test passati, inclusa verifica esatta dei byte Git. Provider SHA `468bd60ca0a11ab835950b92f9fb67ad8961b123dda7c402dad4cc9faad9c6b2`; tutti22target invariati. 54ee e d335 restano immutati come asset storici, non release correnti. La nuova provenienza non modifica le condizioni di recupero esplicito delle pratiche54ee gia avviate.
 
 Il sistema base viene costruito da `git show <sourceCommit>:<path>`, non dai byte CRLF del checkout Windows. `baseSources.sourceState` e `git-tree`. Il decoder di icone e nel submodule ufficiale: `baseSources.externalSources['webtools/heatshrink.js']` dichiara repository, commit, path e SHA256. Il suo commit deve corrispondere al gitlink `webtools` del commit radice. Tutti i 23 input sono stati verificati come Git blob esatti, senza normalizzazione nel consumer.
 
