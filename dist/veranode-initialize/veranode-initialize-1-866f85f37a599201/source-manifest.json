@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "sourceCommit": "6e85cf84aedd94ff04f8dbc572e67b873647eb02",
+  "files": {
+    "initialization/veranode/provider.js": "238425d44dc5adfd51cbf4d5da882cf690123425a2a62922ace5e5a65b7f9fdc",
+    "initialization/veranode/platform.js": "58a6861508b00d11e4f4119f509130e11898d6667251f2f4abf6f1ba34ab508f",
+    "initialization/veranode/recovery.js": "87e5193a3d2687187c3238ac1b7b15abd5fbeadebeacbe1ac25cfba3d0bec6cf",
+    "initialization/veranode/guard.js": "237e5c92a12d81be969f23beacad0eb8dfa65d34e303094630644a5c03da8cee",
+    "initialization/veranode/app.js": "a7b404d8f1fc474304d78c725487eabb9c164f151abe1b576d03b7ce0d6f01bd",
+    "bin/build-veranode-initialize.cjs": "15a56ad66a8ef5c83edfe7b67ae62a92cda005a164c64ba6c1377f395a6ba955"
+  },
+  "runtimePackageSha256": "7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a",
+  "baseSourceManifestSha256": "ed413df46c72f9de46c948f69968303d68490b26df46ae82c021875ae1237a4b",
+  "baseSources": {
+    "schemaVersion": 1,
+    "repository": "https://github.com/deradrea/Daily-BangleApps",
+    "sourceCommit": "6e85cf84aedd94ff04f8dbc572e67b873647eb02",
+    "sourceState": "git-tree",
+    "files": {
+      "apps/boot/metadata.json": "5cf932e7b971e0c9e17f9cb0e5348eb6a43e62c48413b3f50104ffa4daa57889",
+      "apps/boot/boot0.js": "8ce0e36ae16e461ecfc6e147c1c1fa4e0d7e1a0d010e27e14c401d6077a1cc5c",
+      "apps/boot/bootloader.js": "f3a4f4fef36a8ccb60491f00b40789b7faa2bc0953ce96ed0332bf002e3f0bf1",
+      "apps/boot/bootupdate.js": "5d00da7dad5f04daff1911e69dbabb412306f461e391ba296df123b275890ca9",
+      "apps/setting/metadata.json": "166c8af01f96e2bf010e6d27123355b14a472bf62c0d11b11776df2d67229d25",
+      "apps/setting/settings.js": "2347a00879a4d3aa3ac2a817d288681f18b140863e725dcbf152279d663a0a0c",
+      "modules/date_utils.js": "236aeb442a168e94bd3e4113c28ad492534a75320a177b8ceef88a6c70b58070",
+      "modules/widget_utils.js": "0becfe8447adbb95ecf33c9d56d017a05be0b417ce06504807ce465962547239",
+      "apps/setting/settings-icon.js": "14fd8f40ecc21eb8364798445445248b309dea120affeebc68dc3cd33d51376c",
+      "webtools/heatshrink.js": "59da2c594e1e45dcb72f60eeb03ad1c458d510e913bf50ced8aff4dea23a131f",
+      "apps/launch/metadata.json": "b97e917708c726dcf1dab893da0e8724ab526f69aa2e8e5efb32c16f709cee0d",
+      "apps/launch/app.js": "969fe22fe95cf3e8cf0ef4ee5b6f94c35a892dea0fb3dc8e1ad0cdd04bda45b1",
+      "modules/launch_utils.js": "0924a0c2a0c37a8711faec7377590b7adaf7d6d80f3b906af0a9ac1e09ad5920",
+      "apps/launch/settings.js": "d37abaf32b8351c0f4a24549cb1a38c182a84553d9aea9e8932b01e27f81e035",
+      "apps/setting/settings.min.json": "cc370e5857a5fbd1020280b4143b6b18300beab264cbdfccc0e908f0908b8cf0",
+      "LICENSE": "2c22a1e325e926a0c761b3aef9f647f256836d03ba9ee0b992c424ce6bf268e0",
+      "bin/build-vera-system-base.cjs": "a5d07c1f7236541376b05c7f4869e9f17c69c91ff70cd510f1dd01b3643a0525"
+    },
+    "externalSources": {
+      "webtools/heatshrink.js": {
+        "repository": "https://github.com/espruino/EspruinoWebTools",
+        "commit": "5039521694bb53d05693b1889a930eab07bd44eb",
+        "path": "heatshrink.js",
+        "sha256": "59da2c594e1e45dcb72f60eeb03ad1c458d510e913bf50ced8aff4dea23a131f"
+      }
+    }
+  }
+}

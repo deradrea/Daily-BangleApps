@@ -1,0 +1,27 @@
+{
+  "bindingContract": {
+    "version": 2,
+    "legacyAssigned": true,
+    "maintenance": {
+      "bindingVersion": 2,
+      "scope": "device-maintenance",
+      "assignment": null,
+      "deviceIdRequired": true
+    },
+    "authorization": "server-maintenance-policy",
+    "profileBinding": "separate"
+  },
+  "schema": "vera-bangle-initialize-descriptor/1",
+  "revision": "veranode-initialize-1-866f85f37a599201",
+  "sha256": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+  "size": 264159,
+  "board": "BANGLEJS2",
+  "firmware": [
+    "2v29"
+  ],
+  "hardwareValidated": false,
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "mode": "dedicated-initialization",
+  "home": "veranode.app.js",
+  "targetFingerprint": "ad15ce285c1e05473f1db72e48cce2ad1a92445b91989bb6f2579adebaa3f241"
+}
