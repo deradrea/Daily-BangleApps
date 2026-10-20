@@ -7,4 +7,6 @@
   Bluetooth.setConsole(true);
   Bangle.setOptions({wakeOnBTN1:true,wakeOnFaceUp:false,wakeOnTouch:false,lockTimeout:0,lcdPowerTimeout:0,backlightTimeout:0,btnLoadTimeout:0});
   Bangle.setLCDTimeout(0);Bangle.setLCDPower(true);Bangle.setBacklight(true);Bangle.setLCDBrightness(1);Bangle.setLocked(false);
+  // Recovery must remain visible even if .bootcde was interrupted during copy.
+  setTimeout(function(){if(!global.VeraInitialize){try{eval(r('verai.app.js'));}catch(e){E.showMessage('Riprendi da app','VERA');}}},0);
 })();

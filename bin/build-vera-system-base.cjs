@@ -5,11 +5,18 @@ const root=path.resolve(__dirname,'..');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 const repository='https://github.com/deradrea/Daily-BangleApps';
 const builtin=['Storage','heatshrink','locale'];
-function build(outputRoot=path.join(root,'dist/vera-system-base')) {
-  const inputs={},files=[],seen=new Set(),modules=new Set();
+function build(outputRoot=path.join(root,'dist/vera-system-base'),options={}) {
+  const sourceCommit=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+  const inputs={},externalSources={},files=[],seen=new Set(),modules=new Set();
   function source(relative) {
     if(relative.includes('..')||path.isAbsolute(relative))throw Error('Invalid source path');
-    const b=fs.readFileSync(path.join(root,relative)); inputs[relative]=sha(b);return b;
+    let b;
+    if(options.canonicalSources&&relative.startsWith('webtools/')){
+      const commit=cp.execFileSync('git',['rev-parse',sourceCommit+':webtools'],{cwd:root,encoding:'utf8'}).trim(),file=relative.slice(9);
+      b=cp.execFileSync('git',['show',commit+':'+file],{cwd:path.join(root,'webtools')});
+      externalSources[relative]={repository:'https://github.com/espruino/EspruinoWebTools',commit,path:file,sha256:sha(b)};
+    }else b=options.canonicalSources ? cp.execFileSync('git',['show',sourceCommit+':'+relative],{cwd:root}) : fs.readFileSync(path.join(root,relative));
+    inputs[relative]=sha(b);return b;
   }
   function dependencies(code) {
     const names=new Set();
@@ -46,7 +53,8 @@ function build(outputRoot=path.join(root,'dist/vera-system-base')) {
       if(entry.evaluate) {
         const literal=raw.toString('utf8').trim().match(/^require\("heatshrink"\)\.decompress\(atob\("([A-Za-z0-9+/=]+)"\)\)$/);
         if(!literal)throw Error('Evaluation is not an allowlisted icon literal');
-        source('webtools/heatshrink.js');
+        const decoder=source('webtools/heatshrink.js');
+        if(options.canonicalSources&&sha(Buffer.from(fs.readFileSync(path.join(root,'webtools/heatshrink.js'),'utf8').replace(/\r\n/g,'\n')))!==sha(decoder))throw Error('Checkout decoder differs from pinned submodule');
         bytes=Buffer.from(require('../webtools/heatshrink.js').decompress(Uint8Array.from(Buffer.from(literal[1],'base64'))));
       } else if(entry.url.endsWith('.js')) {
         deps=dependencies(raw.toString('utf8'));deps.forEach(module);
@@ -65,13 +73,13 @@ function build(outputRoot=path.join(root,'dist/vera-system-base')) {
   const license=source('LICENSE');source('bin/build-vera-system-base.cjs');
   for(const f of files)for(const dep of f.dependencies)if(!builtin.includes(dep)&&!seen.has(dep))throw Error('Missing module '+dep);
   files.sort((a,b)=>a.name.localeCompare(b.name,'en'));
-  const commit=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
-  const manifest={schemaVersion:1,repository,sourceCommit:commit,sourceState:'working-tree-candidate',files:inputs};
+  const commit=sourceCommit,sourceState=options.canonicalSources?'git-tree':'working-tree-candidate';
+  const manifest={schemaVersion:1,repository,sourceCommit:commit,sourceState,files:inputs,...(options.canonicalSources?{externalSources}:{})};
   const sourceBytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n'),sourceHash=sha(sourceBytes);
   const revision='vera-system-base-dev-'+sourceHash.slice(0,16);
   const bundle={schemaVersion:1,id:'vera-system-base',revision,board:'BANGLEJS2',firmware:['2v29'],
     purpose:'minimal-system-restoration',developmentOnly:true,hardwareValidated:false,releaseReady:false,
-    resetAuthorized:false,sourceRepository:repository,sourceCommit:commit,sourceState:'working-tree-candidate',sourceManifestSha256:sourceHash,
+    resetAuthorized:false,sourceRepository:repository,sourceCommit:commit,sourceState,sourceManifestSha256:sourceHash,
     builtinModules:builtin,applicationIds:['boot','setting','launch'],
     installation:{mode:'system-base-restoration-only',preservesFirmware:true,requiresIsolatedReset:true},
     license:{id:'MIT',sha256:sha(license),text:license.toString('utf8')},files};

@@ -5,7 +5,7 @@ const canonical=x=>Array.isArray(x)?'['+x.map(canonical).join(',')+']':x&&typeof
 function build(output=path.join(root,'dist/veranode-initialize')){
   const raw=fs.readFileSync(path.join(root,'dist/veranode/veranode-0.2.0-dev-545d8915cd396d71/package.json'));
   if(sha(raw)!=='7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a')throw Error('Official Vera Node changed');
-  const runtime=JSON.parse(raw),baseResult=require('./build-vera-system-base.cjs').build(path.join(output,'base')),base=baseResult.bundle;
+  const runtime=JSON.parse(raw),baseResult=require('./build-vera-system-base.cjs').build(path.join(output,'base'),{canonicalSources:true}),base=baseResult.bundle;
   const file=(name,bytes)=>({name,size:bytes.length,sha256:sha(bytes),base64:bytes.toString('base64')});
   const target=base.files.map(f=>file(f.name,Buffer.from(f.base64,'base64'))).concat(runtime.files);
   const settings=JSON.parse(Buffer.from(target.find(f=>f.name==='setting.json').base64,'base64'));
@@ -14,6 +14,10 @@ function build(output=path.join(root,'dist/veranode-initialize')){
   const rows=target.map(({name,size,sha256})=>({name,size,sha256})),fingerprint=sha(canonical(rows));
   const targetModule={files:rows,fingerprint,stagingBytes:target.reduce((n,f)=>n+f.size,0),
     bootloaderSha256:target.find(f=>f.name==='.bootcde').sha256,bootupdateSha256:target.find(f=>f.name==='bootupdate.js').sha256};
+  for(const [field,name] of [['bootloaderHashes','.bootcde'],['bootupdateHashes','bootupdate.js']]){
+    const raw=Buffer.from(target.find(f=>f.name===name).base64,'base64').toString('utf8');
+    targetModule[field]=[...new Set([sha(Buffer.from(raw)),sha(Buffer.from(raw.replace(/\r?\n/g,'\r\n')))])];
+  }
   const inputs={};
   const bootstrap=[['verai.provider.js','provider.js'],['verai.platform.js','platform.js'],['verai.recovery.js','recovery.js'],['verai.0.boot.js','guard.js'],['verai.app.js','app.js']].map(([name,source])=>{
     const bytes=fs.readFileSync(path.join(root,'initialization/veranode',source));acorn.parse(bytes.toString(),{ecmaVersion:2015});inputs['initialization/veranode/'+source]=sha(bytes);return file(name,bytes);});
@@ -30,7 +34,8 @@ function build(output=path.join(root,'dist/veranode-initialize')){
     recovery:{protocol:1,journal:['verai.state0','verai.state1'],strategy:'complete-same-plan-from-verified-staging',rollbackDeletedData:false,
       internalFiles:bootstrap.map(f=>f.name).concat(['verai.state0','verai.state1','verai.plan','verai.oldboot','verai.oldhash']),stagingFiles:target.map((_f,i)=>'verai.f'+i),
       generatedExclusions:['.widcache','.clkinfocache'],unsupportedBoot:['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst','.varimg']},
-    bootstrap,target:{files:target,stagingBytes:targetModule.stagingBytes,bootloaderSha256:targetModule.bootloaderSha256,bootupdateSha256:targetModule.bootupdateSha256},
+    bootstrap,target:{files:target,stagingBytes:targetModule.stagingBytes,bootloaderSha256:targetModule.bootloaderSha256,bootupdateSha256:targetModule.bootupdateSha256,
+      acceptedBootloaderSha256:targetModule.bootloaderHashes,acceptedBootupdateSha256:targetModule.bootupdateHashes},
     license:runtime.license};
   const bytes=Buffer.from(JSON.stringify(bundle,null,2)+'\n'),hash=sha(bytes),revision='veranode-initialize-1-'+hash.slice(0,16),dest=path.join(output,revision);
   fs.mkdirSync(dest,{recursive:true});

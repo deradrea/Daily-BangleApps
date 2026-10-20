@@ -72,7 +72,7 @@ test('immutable package includes complete minimal base, unchanged official JSON/
 });
 test('recovery bootstrap blocks ordinary app loads, keeps named recovery accessible and does not start sensors',()=>{
  const files=new Map([['verai.app.js','maintenance'],['clock.app.js','old clock']]),s={read:n=>files.get(n)},global={};let uart=0,power=0;
- const c={global,require:n=>{assert.equal(n,'Storage');return s;},NRF:{setServices:()=>uart++},Bluetooth:{setConsole:()=>{}},Bangle:{setOptions:()=>{},setLCDTimeout:()=>{},setLCDPower:()=>power++,setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{}}};
+ const c={global,require:n=>{assert.equal(n,'Storage');return s;},NRF:{setServices:()=>uart++},Bluetooth:{setConsole:()=>{}},setTimeout:()=>0,Bangle:{setOptions:()=>{},setLCDTimeout:()=>{},setLCDPower:()=>power++,setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{}}};
  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/recovery.js'),'utf8'),c);
  assert.equal(global.VeraDedicatedRecovery,true);assert.equal(s.read('clock.app.js'),'maintenance');assert.equal(s.read('verai.app.js'),'maintenance');assert.equal(global.VeraInitializeRead('clock.app.js'),'old clock');assert.equal(uart,1);assert.equal(power,1);
 });
@@ -98,7 +98,7 @@ test('actual recovery plus standard bootloader opens maintenance and button pres
  files.set('setting.json',JSON.stringify({clock:'foreign.app.js'}));
  const s={read:n=>files.get(n),readJSON:n=>{try{return JSON.parse(files.get(n));}catch{return;}},writeJSON:(n,v)=>files.set(n,JSON.stringify(v)),list:r=>[...files.keys()].filter(n=>r.test(n))};
  const context=vm.createContext({require:n=>n==='Storage'?s:n==='verai.platform.js'?{create:()=>f.env}:n==='verai.provider.js'?{create}:null,
-  NRF:{setServices:()=>{},on:(e,fn)=>events[e]=fn},Bluetooth:{setConsole:()=>{}},Bangle:{setOptions:()=>{},setLCDTimeout:()=>{},setLCDPower:()=>{},setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{},setUI:x=>ui=x},g:graphics,Math,E:{showMessage:()=>{throw Error('Unexpected failure screen');}}});context.global=context;
+  NRF:{setServices:()=>{},on:(e,fn)=>events[e]=fn},Bluetooth:{setConsole:()=>{}},setTimeout:()=>0,Bangle:{setOptions:()=>{},setLCDTimeout:()=>{},setLCDPower:()=>{},setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{},setUI:x=>ui=x},g:graphics,Math,E:{showMessage:()=>{throw Error('Unexpected failure screen');}}});context.global=context;
  vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/recovery.js'),'utf8'),context);
  vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../../apps/boot/bootloader.js'),'utf8'),context);
  assert.equal(context.VeraDedicatedRecovery,true);assert.equal(typeof context.VeraInitialize.stage,'function');assert.ok(ui);
@@ -131,4 +131,11 @@ test('all new device code avoids unsupported Espruino bounded regex quantifiers'
   function walk(n){if(!n||typeof n!=='object')return;if(n.regex)assert.doesNotMatch(n.regex.pattern,/\{\d+(,\d*)?\}/,file);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);}
   walk(tree);
  }
+});
+test('recovery UI starts from boot0 alone when bootcde is absent or torn',()=>{
+ const timers=[],global={},files={'verai.app.js':'global.RecoveryVisible=true;'};
+ const context={global,require:()=>({read:n=>files[n]}),NRF:{setServices:()=>{}},Bluetooth:{setConsole:()=>{}},setTimeout:fn=>timers.push(fn),
+  Bangle:{setOptions:()=>{},setLCDTimeout:()=>{},setLCDPower:()=>{},setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{}},E:{showMessage:()=>{throw Error('UI failed');}}};
+ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/recovery.js'),'utf8'),context);
+ assert.equal(global.RecoveryVisible,undefined);timers[0]();assert.equal(global.RecoveryVisible,true);
 });

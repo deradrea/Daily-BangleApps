@@ -21,7 +21,7 @@ exports.create=function(){
   function mac(){return NRF.getAddress().split(' ')[0].toUpperCase();}
   function inspect(){var blockers=[],settings=s.readJSON('setting.json',1)||{};
     if(process.env.BOARD!=='BANGLEJS2'||process.env.VERSION!=='2v29')blockers.push('firmware');
-    if(hash(raw('.bootcde')||'')!==t.bootloaderSha256||hash(raw('bootupdate.js')||'')!==t.bootupdateSha256)blockers.push('bootloader');
+    if(!t.bootloaderHashes.includes(hash(raw('.bootcde')||''))||!t.bootupdateHashes.includes(hash(raw('bootupdate.js')||'')))blockers.push('bootloader');
     if(['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst','.varimg'].some(function(n){return raw(n)!==undefined;}))blockers.push('alternate_boot');
     if(settings.blerepl===false)blockers.push('uart_disabled');
     return {board:process.env.BOARD,firmware:process.env.VERSION,mac:mac(),batteryPercent:E.getBattery(),charging:Bangle.isCharging(),freeBytes:s.getStats().freeBytes,compatible:blockers.length===0,blockers:blockers,security:securityStatus()};}
