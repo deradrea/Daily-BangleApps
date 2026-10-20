@@ -41,3 +41,11 @@ In caso di errore prima delle rimozioni i dati sono intatti; dopo il primo effet
 ## Verifiche
 
 Test VM e trasporto simulato possono provare hash, inventario, offset, piano, riprese, isolamento, boot e health fittizia. Non dimostrano durata batteria, latenza BLE, cold boot fisico o interruzioni dell'alimentazione reale. `hardwareValidated:false` resta nel manifest fino a una prova effettiva.
+
+## Provenienza della revisione 54ee
+
+Release canonica: `veranode-initialize-1-54eef6a1037274d8`, SHA256 `54eef6a1037274d8656cf5a63aad31586d347f051857c23085da9576d620e9e9`, 263156 byte. Gli asset precedenti 3245 e 536e rimangono storici e non vanno catalogati.
+
+Il sistema base viene costruito da `git show <sourceCommit>:<path>`, non dai byte CRLF del checkout Windows. `baseSources.sourceState` e `git-tree`. Il decoder di icone e nel submodule ufficiale: `baseSources.externalSources['webtools/heatshrink.js']` dichiara repository, commit, path e SHA256. Il suo commit deve corrispondere al gitlink `webtools` del commit radice. Tutti i 23 input sono stati verificati come Git blob esatti, senza normalizzazione nel consumer.
+
+Il provider riconosce solamente i digest LF e CRLF dichiarati dello stesso bootloader e bootupdate standard. Il target usa i sorgenti Git ufficiali LF; non ammette altri bootloader. Il recupero avvia la propria UI da `.boot0`, anche se `.bootcde` non puo essere eseguito, mantenendo UART per riprendere il piano. Il test di questa condizione e in VM, non su hardware.
