@@ -44,7 +44,11 @@ Test VM e trasporto simulato possono provare hash, inventario, offset, piano, ri
 
 ## Provenienza della revisione 54ee
 
-Release canonica: `veranode-initialize-1-54eef6a1037274d8`, SHA256 `54eef6a1037274d8656cf5a63aad31586d347f051857c23085da9576d620e9e9`, 263156 byte. Gli asset precedenti 3245 e 536e rimangono storici e non vanno catalogati.
+Release storica: `veranode-initialize-1-54eef6a1037274d8`, SHA256 `54eef6a1037274d8656cf5a63aad31586d347f051857c23085da9576d620e9e9`, 263156 byte. Sostituita dalla d335 per compatibilita Espruino2v29; gli asset restano immutati per verifica e recupero delle operazioni pendenti. Gli asset precedenti 3245 e 536e rimangono storici e non vanno catalogati.
+
+## Correzione canonica d335
+
+`veranode-initialize-1-d335c6ff747279b3`, SHA256 `d335c6ff747279b30ccf8d16cdc9917218fa0b6bc0f44b2c3eee2b07aff0a382`, 263364byte. Sorgenti6f93a2f4f, tagcacb08637. Corregge Number.isInteger non disponibile nel provider, senza cambiare target22file, JSON o runtime. 156 test software passati, incluso errore54ee riprodotto e ciclo completo senza Number.isInteger. Per operazioni interrotte, non basta cambiare il catalogo: vedere [confini della riparazione](BANGLE-INITIALIZE-ESPRUINO-2V29-FIX.md). Nessuna esecuzione hardware da questa chat.
 
 Il sistema base viene costruito da `git show <sourceCommit>:<path>`, non dai byte CRLF del checkout Windows. `baseSources.sourceState` e `git-tree`. Il decoder di icone e nel submodule ufficiale: `baseSources.externalSources['webtools/heatshrink.js']` dichiara repository, commit, path e SHA256. Il suo commit deve corrispondere al gitlink `webtools` del commit radice. Tutti i 23 input sono stati verificati come Git blob esatti, senza normalizzazione nel consumer.
 
