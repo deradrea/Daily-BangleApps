@@ -113,3 +113,22 @@ test('dedicated guard blocks partial initialization but allows activation and co
   if(context.global.RecoveryRan)assert.equal(context.global.VeraNode.state.running,false);
  }
 });
+test('peripheral bonding request is non destructive, never trusts bonded/Promise alone, and times out visibly',async()=>{
+ let encrypted=false,resolveBond,bondCalls=0,writes=0;const timers=[];
+ const c={global:{},exports:{},require:n=>n==='Storage'?{read:()=>undefined,write:()=>writes++}:n==='crypto'?{SHA256:x=>crypto.createHash('sha256').update(Buffer.from(x,'latin1')).digest()}:fixture().env.target,
+  Uint8Array,NRF:{getSecurityStatus:()=>({connected:true,encrypted,bonded:true}),startBonding:force=>{assert.equal(force,false);bondCalls++;return new Promise(r=>resolveBond=r);},setSecurity:()=>{throw Error('Do not replace security policy');}},
+  atob:x=>Buffer.from(x,'base64').toString('latin1'),setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout:()=>{}};
+ vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/platform.js'),'utf8'),c);
+ const e=c.exports.create(),p=create(e);assert.equal(p.requestSecurity().state,'requested');assert.equal(bondCalls,1);p.requestSecurity();assert.equal(bondCalls,1);
+ assert.throws(()=>p.prepare(binding),/cifrato/);resolveBond();await Promise.resolve();assert.equal(p.securityStatus().state,'awaiting-encryption');assert.equal(writes,0);
+ timers[0]();assert.equal(p.securityStatus().state,'timed-out');assert.match(p.securityStatus().error,/telefono/);assert.throws(()=>p.prepare(binding),/cifrato/);
+ encrypted=true;assert.equal(p.securityStatus().state,'encrypted');assert.equal(p.requestSecurity().encrypted,true);assert.equal(bondCalls,1);assert.equal(writes,0);
+});
+test('all new device code avoids unsupported Espruino bounded regex quantifiers',()=>{
+ const acorn=require('acorn');
+ for(const file of ['app.js','guard.js','platform.js','provider.js','recovery.js']){
+  const tree=acorn.parse(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode',file),'utf8'),{ecmaVersion:2015});
+  function walk(n){if(!n||typeof n!=='object')return;if(n.regex)assert.doesNotMatch(n.regex.pattern,/\{\d+(,\d*)?\}/,file);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);}
+  walk(tree);
+ }
+});

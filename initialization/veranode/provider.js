@@ -3,10 +3,10 @@ exports.create = function(e) {
   var state=e.load(), upload, consent=false;
   function fail(s){throw Error(s);}
   function same(a,b){return e.canonical(a)===e.canonical(b);}
-  function valid(b){return b && /^[A-F0-9]{2}(:[A-F0-9]{2}){5}$/.test(b.mac) &&
-    /^[a-f0-9]{64}$/.test(b.packageSha256) && typeof b.operationId==='string' &&
-    /^[a-zA-Z0-9-]{16,80}$/.test(b.operationId) && Number.isInteger(b.assignment) && b.assignment>0;}
-  function connected(){if(!e.encrypted())fail('Collegamento cifrato necessario');}
+  function valid(b){return b && typeof b.mac==='string'&&b.mac.length===17&&/^[A-F0-9:]+$/.test(b.mac)&&b.mac.split(':').length===6&&b.mac.split(':').every(function(p){return p.length===2;}) &&
+    typeof b.packageSha256==='string'&&b.packageSha256.length===64&&/^[a-f0-9]+$/.test(b.packageSha256) && typeof b.operationId==='string' &&
+    b.operationId.length>=16&&b.operationId.length<=80&&/^[a-zA-Z0-9-]+$/.test(b.operationId) && Number.isInteger(b.assignment) && b.assignment>0;}
+  function connected(){if(!e.encrypted())fail('Collegamento cifrato necessario: conferma associazione sul telefono');}
   function guard(){connected();if(!state || e.mac()!==state.binding.mac || !e.isolated())fail('Preparazione isolata necessaria');}
   function save(){e.save(state);}
   function paint(){e.progress(state.phase,state.done||0,state.total||0);}
@@ -112,6 +112,6 @@ exports.create = function(e) {
     guard();if(!['prepared','staging','cancelled'].includes(state.phase)||state.done||state.pending)fail('Rimozioni iniziate: completa il recupero della stessa operazione');
     state.phase='cancelled';save();e.restoreBoot();e.activate();return {cancelled:true,userDataErased:false};
   }
-  return {inspect:e.inspect,prepare:prepare,status:status,plan:plan,stage:stage,apply:apply,verify:verify,activate:activate,recover:recover,confirm:confirm,cancel:cancel,
+  return {inspect:e.inspect,requestSecurity:e.requestSecurity,securityStatus:e.securityStatus,prepare:prepare,status:status,plan:plan,stage:stage,apply:apply,verify:verify,activate:activate,recover:recover,confirm:confirm,cancel:cancel,
     setConsent:function(on){consent=on===true;},inventoryPage:function(offset,limit){guard();if(!state.plan||!Number.isInteger(offset)||!Number.isInteger(limit)||offset<0||limit<1||limit>24||offset>state.plan.files.length)fail('Pagina non valida');return {offset:offset,total:state.plan.files.length,next:Math.min(offset+limit,state.plan.files.length),planHash:state.planHash,files:state.plan.files.slice(offset,offset+limit)};}};
 };

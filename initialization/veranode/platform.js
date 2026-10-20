@@ -1,6 +1,7 @@
 /* Espruino Bangle.js2 adapter. Binary strings, bounded inventories, no compact. */
 exports.create=function(){
   var s=require('Storage'),crypto=require('crypto'),t=require('verai.target.js'),generation=0;
+  var bonding='idle',securityTimer,securityError;
   var raw=global.VeraInitializeRead||s.read.bind(s);
   function hash(x){var a=new Uint8Array(crypto.SHA256(x)),out='';for(var i=0;i<a.length;i++)out+=('0'+a[i].toString(16)).slice(-2);return out;}
   function canonical(x){if(Array.isArray(x))return '['+x.map(canonical).join(',')+']';if(x&&typeof x==='object')return '{'+Object.keys(x).sort().map(function(k){return JSON.stringify(k)+':'+canonical(x[k]);}).join(',')+'}';return JSON.stringify(x);}
@@ -14,7 +15,7 @@ exports.create=function(){
     if(st.plan){var p=JSON.stringify(st.plan);if(p.length>32768)throw Error('Piano oltre limite memoria');if(hash(canonical(st.plan))!==st.planHash)throw Error('Hash piano diverso');if(raw('verai.plan')!==p){write('verai.plan',p);if(raw('verai.plan')!==p)throw Error('Piano non verificato');}}
     st.generation=++generation;var copy={};Object.keys(st).forEach(function(k){if(k!=='plan')copy[k]=st[k];});
     var body=JSON.stringify(copy),bytes=JSON.stringify({body:body,sha256:hash(body)}),name='verai.state'+generation%2;write(name,bytes);if(raw(name)!==bytes)throw Error('Registro non verificato');}
-  function describe(n,kind){if(!/^[\x20-\x7e]{1,28}$/.test(n))throw Error('Nome file non supportato');var data;if(kind==='normal')data=raw(n);else{var listed=s.list(undefined,{sf:true}).some(function(v){return v.slice(0,-1)===n;});if(!listed)return null;var f=s.open(n,'r'),p;data='';while((p=f.read(512))!==undefined&&p!==''){data+=p;if(data.length>65536)throw Error('StorageFile oltre 64 KiB');}}
+  function describe(n,kind){if(typeof n!=='string'||n.length<1||n.length>28||!/^[\x20-\x7e]+$/.test(n))throw Error('Nome file non supportato');var data;if(kind==='normal')data=raw(n);else{var listed=s.list(undefined,{sf:true}).some(function(v){return v.slice(0,-1)===n;});if(!listed)return null;var f=s.open(n,'r'),p;data='';while((p=f.read(512))!==undefined&&p!==''){data+=p;if(data.length>65536)throw Error('StorageFile oltre 64 KiB');}}
     return data===undefined?null:{name:n,kind:kind,size:data.length,sha256:hash(data)};}
   function inventory(){var rows=s.list(undefined,{sf:false}).filter(function(n){return !internal(n);}).map(function(n){return describe(n,'normal');}),seen={};s.list(undefined,{sf:true}).forEach(function(n){n=n.slice(0,-1);if(!seen[n]){seen[n]=true;rows.push(describe(n,'storage-file'));}});if(rows.length>128)throw Error('Inventario oltre 128 file');return rows;}
   function mac(){return NRF.getAddress().split(' ')[0].toUpperCase();}
@@ -23,7 +24,18 @@ exports.create=function(){
     if(hash(raw('.bootcde')||'')!==t.bootloaderSha256||hash(raw('bootupdate.js')||'')!==t.bootupdateSha256)blockers.push('bootloader');
     if(['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst','.varimg'].some(function(n){return raw(n)!==undefined;}))blockers.push('alternate_boot');
     if(settings.blerepl===false)blockers.push('uart_disabled');
-    return {board:process.env.BOARD,firmware:process.env.VERSION,mac:mac(),batteryPercent:E.getBattery(),charging:Bangle.isCharging(),freeBytes:s.getStats().freeBytes,compatible:blockers.length===0,blockers:blockers};}
+    return {board:process.env.BOARD,firmware:process.env.VERSION,mac:mac(),batteryPercent:E.getBattery(),charging:Bangle.isCharging(),freeBytes:s.getStats().freeBytes,compatible:blockers.length===0,blockers:blockers,security:securityStatus()};}
+  function securityStatus(){var st=NRF.getSecurityStatus();return {connected:!!st.connected,encrypted:!!st.encrypted,bonded:!!st.bonded,state:st.encrypted?'encrypted':bonding,error:securityError||null};}
+  function requestSecurity(){
+    var st=securityStatus();if(!st.connected)throw Error('Collega il Bluetooth prima di associare');if(st.encrypted)return st;
+    if(['requested','awaiting-encryption'].includes(bonding))return st;
+    if(typeof NRF.startBonding!=='function')throw Error('Associazione cifrata non disponibile');
+    bonding='requested';securityError=undefined;
+    securityTimer=setTimeout(function(){if(!NRF.getSecurityStatus().encrypted){bonding='timed-out';securityError='Conferma associazione sul telefono e riprova';}},45000);
+    try{NRF.startBonding(false).then(function(){if(NRF.getSecurityStatus().encrypted){bonding='encrypted';clearTimeout(securityTimer);}else bonding='awaiting-encryption';},function(){bonding='failed';securityError='Associazione non completata';clearTimeout(securityTimer);});}
+    catch(e){bonding='failed';securityError='Associazione non completata';clearTimeout(securityTimer);}
+    return securityStatus();
+  }
   function isolate(){
     // Existing bootloader is never erased. This temporary .boot0 routes every
     // clock load to recovery, including when setting.json is being replaced.
@@ -33,7 +45,7 @@ exports.create=function(){
     setTimeout(function(){global.load('verai.app.js');},250);
   }
   return {target:t,hash:hash,canonical:canonical,load:load,save:save,read:raw,write:write,
-    inventory:inventory,describe:describe,mac:mac,inspect:inspect,isolate:isolate,
+    inventory:inventory,describe:describe,mac:mac,inspect:inspect,isolate:isolate,requestSecurity:requestSecurity,securityStatus:securityStatus,
     restoreBoot:function(){var b=raw('verai.oldboot');if(typeof b!=='string'||hash(b)!==raw('verai.oldhash'))throw Error('Boot originale da recuperare');write('.boot0',b);if(raw('.boot0')!==b)throw Error('Ripristino boot non verificato');},
     encrypted:function(){return !!NRF.getSecurityStatus().encrypted;},isolated:function(){return global.VeraDedicatedRecovery===true;},
     settings:function(){return s.readJSON('setting.json',1)||{};},

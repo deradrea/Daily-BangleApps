@@ -11,6 +11,7 @@ Vera autorizza l'amministratore, l'assegnazione, il MAC e il pacchetto nel consu
 Dopo caricamento e rilettura dei file `bootstrap`, il consumer crea `global.VeraInitialize=require('verai.provider.js').create(require('verai.platform.js').create())`. Nessuna espressione di cancellazione viene generata dai consumer.
 
 - `inspect()` restituisce board, firmware, mac, batteria, spazio e compatibilità. Non cancella o installa.
+- `requestSecurity()` avvia solo `NRF.startBonding(false)`, senza forzare nuove chiavi o modificare la policy Bluetooth. Restituisce lo stato immediato; `securityStatus()` distingue requested, awaiting-encryption, encrypted, failed e timed-out. Il consumer attende `encrypted:true`, non la sola risoluzione della Promise. Timeout 45 secondi, messaggio di associazione sul telefono, nessuna rimozione o preparazione mentre il collegamento non e cifrato.
 - `prepare(binding)` richiede `{operationId,mac,packageSha256,assignment}`; è una preparazione non distruttiva che registra il contesto e isola l'esecuzione. Il consumer rilegge lo stato dopo riconnessione. Il bootloader deve essere compatibile prima di questa operazione.
 - `status()` restituisce fase, contatori reali, contesto e stato del consenso.
 - `plan()` in ambiente isolato congela l'inventario reale e restituisce `planHash`, `removeApps`, `removeData`, `replace`, `files`. Ogni voce è `{name,kind,size,sha256}`. `kind` è `normal` oppure `storage-file`. Non assumere che il device sia vuoto.
