@@ -2,17 +2,18 @@
 exports.create = function(e) {
   var state=e.load(), upload, consent=false;
   function fail(s){throw Error(s);}
+  function integer(n){return typeof n==='number'&&isFinite(n)&&Math.floor(n)===n;}
   function same(a,b){return e.canonical(a)===e.canonical(b);}
   function valid(b){return b && typeof b.mac==='string'&&b.mac.length===17&&/^[A-F0-9:]+$/.test(b.mac)&&b.mac.split(':').length===6&&b.mac.split(':').every(function(p){return p.length===2;}) &&
     typeof b.packageSha256==='string'&&b.packageSha256.length===64&&/^[a-f0-9]+$/.test(b.packageSha256) && typeof b.operationId==='string' &&
-    b.operationId.length>=16&&b.operationId.length<=80&&/^[a-zA-Z0-9-]+$/.test(b.operationId) && Number.isInteger(b.assignment) && b.assignment>0;}
+    b.operationId.length>=16&&b.operationId.length<=80&&/^[a-zA-Z0-9-]+$/.test(b.operationId) && integer(b.assignment) && b.assignment>0;}
   function connected(){if(!e.encrypted())fail('Collegamento cifrato necessario: conferma associazione sul telefono');}
   function guard(){connected();if(!state || e.mac()!==state.binding.mac || !e.isolated())fail('Preparazione isolata necessaria');}
   function save(){e.save(state);}
   function paint(){e.progress(state.phase,state.done||0,state.total||0);}
   function matches(name,f){var raw=e.read(name);return typeof raw==='string'&&raw.length===f.size&&e.hash(raw)===f.sha256;}
   function stageName(i){return 'verai.f'+i;}
-  function target(i){if(!Number.isInteger(i)||i<0||i>=e.target.files.length)fail('File non previsto');return e.target.files[i];}
+  function target(i){if(!integer(i)||i<0||i>=e.target.files.length)fail('File non previsto');return e.target.files[i];}
   function inventory(){return e.inventory().sort(function(a,b){var x=a.kind+':'+a.name,y=b.kind+':'+b.name;return x<y?-1:x>y?1:0;});}
   function status(){return {protocol:1,phase:state?state.phase:'unprepared',binding:state&&state.binding,
     done:state&&state.done||0,total:state&&state.total||0,planHash:state&&state.planHash,
@@ -44,7 +45,7 @@ exports.create = function(e) {
   function stage(index,offset,total,base64){
     guard();if(state.phase!=='staging'||!state.plan)fail('Piano necessario');
     var f=target(index),raw=e.unbase64(base64);
-    if(total!==f.size||!Number.isInteger(offset)||offset<0||!raw.length||raw.length>384||offset+raw.length>total)fail('Blocco non valido');
+    if(total!==f.size||!integer(offset)||offset<0||!raw.length||raw.length>384||offset+raw.length>total)fail('Blocco non valido');
     if(state.staged.includes(index)){if(!matches(stageName(index),f))fail('Staging corrotto');return status();}
     if(offset===0){upload={index:index,next:0};e.write(stageName(index),'',0,total);}
     if(!upload||upload.index!==index||upload.next!==offset)fail('Ordine blocchi diverso');
@@ -113,5 +114,5 @@ exports.create = function(e) {
     state.phase='cancelled';save();e.restoreBoot();e.activate();return {cancelled:true,userDataErased:false};
   }
   return {inspect:e.inspect,requestSecurity:e.requestSecurity,securityStatus:e.securityStatus,prepare:prepare,status:status,plan:plan,stage:stage,apply:apply,verify:verify,activate:activate,recover:recover,confirm:confirm,cancel:cancel,
-    setConsent:function(on){consent=on===true;},inventoryPage:function(offset,limit){guard();if(!state.plan||!Number.isInteger(offset)||!Number.isInteger(limit)||offset<0||limit<1||limit>24||offset>state.plan.files.length)fail('Pagina non valida');return {offset:offset,total:state.plan.files.length,next:Math.min(offset+limit,state.plan.files.length),planHash:state.planHash,files:state.plan.files.slice(offset,offset+limit)};}};
+    setConsent:function(on){consent=on===true;},inventoryPage:function(offset,limit){guard();if(!state.plan||!integer(offset)||!integer(limit)||offset<0||limit<1||limit>24||offset>state.plan.files.length)fail('Pagina non valida');return {offset:offset,total:state.plan.files.length,next:Math.min(offset+limit,state.plan.files.length),planHash:state.planHash,files:state.plan.files.slice(offset,offset+limit)};}};
 };

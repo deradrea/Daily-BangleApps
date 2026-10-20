@@ -3,7 +3,7 @@ const {canonical,build}=require('../../bin/build-veranode-initialize.cjs');
 const create=require('../../initialization/veranode/provider.js').create;
 const hash=s=>crypto.createHash('sha256').update(Buffer.from(s,'latin1')).digest('hex');
 const binding={mac:'DF:B7:68:30:4C:46',operationId:'12345678-1234-4234-8234-123456789abc',packageSha256:'a'.repeat(64),assignment:16};
-function fixture(){
+function fixture(providerCreate=create){
   const normal=new Map([['.boot0','original boot'],['.bootcde','loader'],['bootupdate.js','boot update'],['setting.json','{}'],['foreign.app.js','foreign code'],['foreign.info','foreign registry'],['foreign.data','data'],['veranode.policy.json','old profile']]),sf=new Map([['veranode.s0','sample\x00\xff\n']]);
   const payload={'.boot0':'target boot','.bootcde':'loader','bootupdate.js':'boot update','setting.json':'{"clock":"veranode.app.js"}','veranode.app.js':'target clock','veranode.boot.js':'target collector'};
   const files=Object.entries(payload).map(([name,data])=>({name,size:data.length,sha256:hash(data)}));
@@ -19,9 +19,9 @@ function fixture(){
     describe,erase:(n,k)=>{(k==='normal'?normal:sf).delete(n);mutations.push('erase:'+n);if(crash==='erase'){crash=null;throw Error('power lost');}},
     unbase64:s=>Buffer.from(s,'base64').toString('latin1'),progress:(...p)=>progress.push(p),settings:()=>JSON.parse(normal.get('setting.json')),
     health:()=>health,activate:()=>activated++,restoreBoot:()=>restore++};
-  let provider=create(env);
+  let provider=providerCreate(env);
   function ready(){provider.prepare(binding);const plan=provider.plan();files.forEach((f,i)=>provider.stage(i,0,f.size,Buffer.from(payload[f.name],'latin1').toString('base64')));provider.setConsent(true);return plan;}
-  return {env,normal,sf,payload,files,progress,mutations,ready,get p(){return provider;},reboot(){provider=create(env);},set crash(x){crash=x;},set encrypted(x){encrypted=x;},set mac(x){localMac=x;},set health(x){health=x;},get stored(){return stored;},get activated(){return activated;},get restore(){return restore;}};
+  return {env,normal,sf,payload,files,progress,mutations,ready,get p(){return provider;},reboot(){provider=providerCreate(env);},set crash(x){crash=x;},set encrypted(x){encrypted=x;},set mac(x){localMac=x;},set health(x){health=x;},get stored(){return stored;},get activated(){return activated;},get restore(){return restore;}};
 }
 test('real dynamic plan distinguishes foreign software, data and original profile; first stages all targets',()=>{
  const f=fixture();f.p.prepare(binding);const plan=f.p.plan();assert.equal(plan.removeApps.length,2);assert.equal(plan.removeData.length,3);
@@ -138,4 +138,33 @@ test('recovery UI starts from boot0 alone when bootcde is absent or torn',()=>{
   Bangle:{setOptions:()=>{},setLCDTimeout:()=>{},setLCDPower:()=>{},setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{}},E:{showMessage:()=>{throw Error('UI failed');}}};
  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/recovery.js'),'utf8'),context);
  assert.equal(global.RecoveryVisible,undefined);timers[0]();assert.equal(global.RecoveryVisible,true);
+});
+
+
+test('Espruino 2v29 without Number.isInteger completes the provider lifecycle and validates numeric inputs',()=>{
+ const context=vm.createContext({exports:{}});
+ vm.runInContext('Number.isInteger=undefined;Number.isFinite=undefined;',context);
+ vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode/provider.js'),'utf8'),context);
+ const f=fixture(context.exports.create);
+ for(const assignment of [0,-1,1.5,NaN,Infinity,-Infinity,'16',null])assert.throws(()=>f.p.prepare({...binding,assignment}),/Contesto/);
+ const plan=f.ready();
+ for(const value of [NaN,Infinity,-Infinity,1.5,'0',null]){
+  assert.throws(()=>f.p.inventoryPage(value,1),/Pagina/);
+  assert.throws(()=>f.p.inventoryPage(0,value),/Pagina/);
+  assert.throws(()=>f.p.stage(value,0,1,'YQ=='),/File/);
+  assert.throws(()=>f.p.stage(0,value,f.files[0].size,'YQ=='),/Blocco/);
+ }
+ assert.equal(f.p.inventoryPage(0,2).files.length,2);
+ f.reboot();f.p.recover(binding);f.p.setConsent(true);
+ while(f.p.status().phase!=='verified')f.p.apply(plan.planHash);
+ assert.equal(f.p.verify().verified,true);f.p.activate();
+ f.health={running:true,scheduled:true,hrmRequested:true};
+ assert.equal(f.p.confirm().softwareReady,true);
+});
+
+test('device bootstrap cannot introduce unsupported Number predicates',()=>{
+ for(const name of ['provider.js','platform.js','recovery.js','guard.js','app.js']){
+  const text=fs.readFileSync(path.resolve(__dirname,'../../initialization/veranode',name),'utf8');
+  assert.equal(/Number\s*\.\s*(?:isInteger|isFinite|isSafeInteger)\s*\(/.test(text),false,name);
+ }
 });
