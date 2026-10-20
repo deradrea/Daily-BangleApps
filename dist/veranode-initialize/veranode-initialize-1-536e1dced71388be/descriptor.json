@@ -1,0 +1,15 @@
+{
+  "schema": "vera-bangle-initialize-descriptor/1",
+  "revision": "veranode-initialize-1-536e1dced71388be",
+  "sha256": "536e1dced71388be6ba9327f5fa5d4fd2a5647937f5f6377759763f74061928f",
+  "size": 264468,
+  "board": "BANGLEJS2",
+  "firmware": [
+    "2v29"
+  ],
+  "hardwareValidated": false,
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "mode": "dedicated-initialization",
+  "home": "veranode.app.js",
+  "targetFingerprint": "a4abea35ff800891bcc600e3bc5000992a6b5318fc946f041743811e958c2d0b"
+}

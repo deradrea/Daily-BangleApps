@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "sourceCommit": "04f673dcda881dbe5ea22cc2bf140b6a2cdcb73b",
+  "files": {
+    "initialization/veranode/provider.js": "2f6958244a1be4fa8374277280d3cdc4c7875479ff82a5485a23332742578f9a",
+    "initialization/veranode/platform.js": "6c819bf15410fd3efea4c65d1883eecfca9dbeab7fef58aeab69d0f77e288d4e",
+    "initialization/veranode/recovery.js": "55d1a0b34e13e261e41206d1f5b9c4b7e1b1365261556bdad0db32084533398b",
+    "initialization/veranode/guard.js": "237e5c92a12d81be969f23beacad0eb8dfa65d34e303094630644a5c03da8cee",
+    "initialization/veranode/app.js": "a7b404d8f1fc474304d78c725487eabb9c164f151abe1b576d03b7ce0d6f01bd",
+    "bin/build-veranode-initialize.cjs": "e6ed84a83111be6238f31fd37e681e81dc02059e667e273c2d4ed524df8af19c"
+  },
+  "runtimePackageSha256": "7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a",
+  "baseSourceManifestSha256": "3e211149cb7a7e3e769a75a1127332a2c72630339b32db58b3571ade039339b0",
+  "baseSources": {
+    "schemaVersion": 1,
+    "repository": "https://github.com/deradrea/Daily-BangleApps",
+    "sourceCommit": "04f673dcda881dbe5ea22cc2bf140b6a2cdcb73b",
+    "sourceState": "working-tree-candidate",
+    "files": {
+      "apps/boot/metadata.json": "646c1c40aff4dbd1b9dbb8bb5d1553e1f0293167eef118e25b5734ac533ce315",
+      "apps/boot/boot0.js": "657c9e2fdc6382141780fa0a65d6fbe04d9d84041f5a7b9b0cd0df6ab24dcf74",
+      "apps/boot/bootloader.js": "2d44c4ba1e20cd109152f10d3c43caa86193b4b517260e5ca2de97cc40d0b3d1",
+      "apps/boot/bootupdate.js": "bdebc09327c91ada0e1822be4b64de204f4618617d82912f4bbe14e3cfe85676",
+      "apps/setting/metadata.json": "cf870a43a2f0d3e336b0c43e7a2c9b54316c375c37f01b9e8921ddc600b2b113",
+      "apps/setting/settings.js": "e8c2d2ba325de683e63d90e94eeea3988e8e0f93a50971492e6b15fb09a8221f",
+      "modules/date_utils.js": "a1e0357398c8286297713fa95c290f53c56d51bd519336fba655de173ada44b5",
+      "modules/widget_utils.js": "cc3b49d023026d75e0f0d870c95a70f074c032261d7c880f52f72bc733690103",
+      "apps/setting/settings-icon.js": "f62800f363a76531622fc7b44242a669fe3de7d36ac440aaf141ed0fab46939c",
+      "webtools/heatshrink.js": "6426ba52e5eac27039958b75dcc7321613c94ff1904fca0ee913be529ac3abf7",
+      "apps/launch/metadata.json": "9ac19d899ab580e32e22e00d3201a0998aa77e56725140dc8d6882c01dfa18d6",
+      "apps/launch/app.js": "7a9fba571afb08d6dea644e79c59ef7c1cd4d0e6e3b32e147e9dc43aac029440",
+      "modules/launch_utils.js": "3b4b118ce3c531838c07226e475b120d4bd120234758c6f36309e5ce86229500",
+      "apps/launch/settings.js": "e0e16c8c7b890d12bd46dcc28dc70068ddbc073aa7693b20e0e8be04682df41d",
+      "apps/setting/settings.min.json": "cc370e5857a5fbd1020280b4143b6b18300beab264cbdfccc0e908f0908b8cf0",
+      "LICENSE": "399bfa37df3a20274cea111ac879622770d5ed8f60164d61d989e029bcbec53f",
+      "bin/build-vera-system-base.cjs": "6bbd221e632712658194be1f6e9c4d7d80c14224f23b1522c17430b8a0458509"
+    }
+  }
+}
