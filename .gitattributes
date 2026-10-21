@@ -10,3 +10,8 @@ test/veranode/fixtures/** -text
 maintenance/veranode/** -text
 bin/build-veranode-upgrade.cjs -text
 dist/veranode-upgrade/** -text
+
+# Zero initialization hashes committed code and immutable assets.
+initialization/zero/** -text
+bin/build-veranode-zero.cjs -text
+dist/veranode-zero/** -text
