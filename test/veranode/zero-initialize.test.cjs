@@ -57,12 +57,14 @@ test('more than 128 files and a large StorageFile are removed without reading th
 });
 
 test('every persisted write/erase interruption resumes the same execution without another wipe',()=>{
- const base=fixture('partial');base.finish();const operations=base.mutations;
+ const setup=()=>{const f=fixture('partial');for(let i=1;i<=3;i++)f.sfChunks.set('raw'+String.fromCharCode(i),'chunk'+i);return f;};
+ const base=setup();base.finish();const operations=base.mutations;
  for(let cut=1;cut<=operations;cut++){
-  const f=fixture('partial');f.crash=cut;let interrupted=false;
+  const f=setup();f.crash=cut;let interrupted=false;
   try{f.finish();}catch(err){assert.match(String(err),/power lost/);interrupted=true;}
   assert.equal(interrupted,true,'cut '+cut);f.reboot();let final;try{final=f.finish();}catch(err){throw Error('cut '+cut+' phase '+f.p.status().phase+': '+err.message);}assert.equal(final.phase,'complete','cut '+cut);
   for(const n of ['foreign.app.js','veranode.s0','verai.state0'])assert.equal(f.log.filter(x=>x.name===n&&x.kind.startsWith('erase')).length,1,'erase only once '+cut+':'+n);
+  assert.equal(f.sfChunks.size,0,'all raw chunks gone '+cut);for(let i=1;i<=3;i++)assert.equal(f.log.filter(x=>x.kind==='erase-chunk'&&x.name==='raw'+String.fromCharCode(i)).length,1,'raw chunk erased once '+cut+':'+i);
   assert.equal(final.binding.executionId,binding.executionId);
  }
 });
