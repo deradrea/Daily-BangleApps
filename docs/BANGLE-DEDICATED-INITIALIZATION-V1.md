@@ -80,3 +80,37 @@ Runtime target, JSON campioni e i 22 file di destinazione sono identici al pacch
 Artefatto pubblicabile: `veranode-initialize-1-866f85f37a599201`, 264159 byte, SHA256 `866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4`. Sorgenti canonici al commit `6e85cf84aedd94ff04f8dbc572e67b873647eb02`; descriptor SHA256 `8b13cd70a7b904b6b353c496980813a5ca83490981ac385d2aa346b20a82ce9c`, source-manifest SHA256 `19c84d7a79563bd05435adcdb644ca5cfc7f26bea64787786accd9b7d51fa951`. Il solo bootstrap cambiato rispetto a4652 è `verai.provider.js`, SHA256 `238425d44dc5adfd51cbf4d5da882cf690123425a2a62922ace5e5a65b7f9fdc` (10265 byte).
 
 Validazione: 162 test Node superati, inclusi24 di inizializzazione. Verifica indipendente di dimensioni/hash di tutti28 file, provenienza Git degli input bootstrap/builder e uguaglianza integrale dei22 target/runtime con4652. Nessuna connessione BLE o scrittura su orologi durante sviluppo/pubblicazione. Consumo Web/App e migrazione auditata della pratica E075 restano attività distinte dal rilascio GitHub.
+
+
+## Evoluzione richiesta: Inizializza Bangle da zero — contratto minimo proposto,21ottobre2026
+
+Questa sezione definisce il nuovo motore richiesto; NON descrive una funzione gia implementata da866f e non modifica il pacchetto pubblicato. UI: due sole operazioni, Inizializza Bangle (distruttiva) e Aggiorna Vera (conservativa). Diagnosi e ripresa tecnica non sono ulteriori procedure da scegliere.
+
+### Semantica dell'operazione
+
+Una nuova inizializzazione esplicitamente confermata elimina i contenuti logici precedenti: app, campioni, eventi, profili e impostazioni. Installa base essenziale e Vera da pacchetto immutabile, imposta il quadrante, sincronizza l'orario con Vera e controlla la raccolta. Non preserva il profilo precedente e non lo inventa se il device non ha un utente. Il successivo caricamento di un profilo approvato e distinto e avviene solo se il server lo fornisce. Firmware, identita hardware e registro dei dispositivi non sono oggetto di formattazione. Non si promette cancellazione forense della flash.
+
+Il punto di partenza applicativo puo essere factory, Vera esistente o installazione parziale. La vecchia pratica non deve essere un prerequisito UX: una nuova intenzione distruttiva genera una nuova esecuzione; eventuali precedenti vengono conservati e collegati come superseded, non falsificati o riutilizzati come autorizzazione. Una perdita BLE della STESSA esecuzione deve invece riprendere il checkpoint tecnico senza lanciare una nuova formattazione. In caso di checkpoint illeggibile nessuna cancellazione alla cieca: verifica o nuova intenzione distruttiva esplicita.
+
+### Nuovo contratto, separato dal protocollo866f
+
+Nome proposto `vera-bangle-zero-initialize/1`, mode `zero-initialization`; richiede un nuovo pacchetto/driver e API corrispondenti. Campi minimi del manifest: board, elenco firmware esatto, artifactSHA, file base+Vera con dimensioni/SHA, loader di recupero e relativa integrita, preserveFirmware:true, preserveUserData:false, replaceSettings:true, requiresExistingVera:false. Il JSON dei campioni rimane quello concordato.
+
+Binding di esecuzione: executionId nuovo, deviceId canonico, MAC, board/firmware effettivamente letti, packageSHA, generation/nonce, intent `initialize-from-zero`. Grant server distinti per prepare, wipe-once, install e activate; autorizzazione secondo MaintenanceAccess, scadenza/revoca e consenso distruttivo attuale riferito al MAC. Non si assume firma verificata sul device dove il driver non la implementa. Mai ampliare implicitamente firmware o permessi con una modifica al catalogo.
+
+Checkpoint minimo: executionId/generation/packageSHA, fase, wipeConsumed, indice/insieme cancellazioni completate, staging verificato, installazione verificata, activation e ricevuta finale. Copia locale e copia server/consumer, confronto completo del binding e gestione delle risposte perse. Revocare le autorizzazioni precedenti e impedire due esecuzioni concorrenti sullo stesso device; vecchi token o istanze provider non devono poter continuare a scrivere.
+
+### Sequenza del nuovo driver
+
+1. Lettura non distruttiva di identita/firmware/batteria/capacita e controllo autorizzazione, scelta MAC e conferma perdita attuale.
+2. Ingresso controllato nel loader ufficiale di manutenzione e isolamento del software precedente, senza fidarsi di provider o journal gia presenti. Verificare per rilettura tutti i componenti di recupero prima di attivare il percorso di boot. Il trattamento di boot sconosciuti/alternativi richiede implementazione e prove specifiche, non la rimozione della guardia866f.
+3. Preparazione e verifica del target e delle risorse necessarie al recupero. Enumerazione normal/StorageFile con memoria limitata; rimozione del limite applicativo128file/64KiB attraverso un nuovo algoritmo, non la lettura integrale degli archivi in RAM. Per cancellare i dati vecchi non serve caricarne l'intero contenuto: i normali e gli StorageFile richiedono API distinte. Restano i limiti fisici di RAM, flash, energia e connessione.
+4. Registrazione persistente del wipe-once prima delle cancellazioni. Rimozione dei contenuti precedenti per passi verificabili, preservando esclusivamente il loader, checkpoint e staging di QUESTA esecuzione. Se serve erasure completa dello Storage, progettare un recupero indipendente: eraseAll elimina anche loader e journal salvati nello stesso Storage e NON puo essere aggiunto ingenuamente a866f.
+5. Copia verificata della base+Vera, impostazioni nuove, verifica che non rimangano contenuti estranei, commutazione finale all'avvio ufficiale e riavvio.
+6. Ricevuta distinta per integrita software, avvio/quadrante, orario e raccolta. La richiesta HRM non prova da sola il battito: osservare campioni nuovi/contatore e timestamp in avanzamento; quando necessario l'utente indossa l'orologio. Un device senza utente non riceve un profilo operativo inventato.
+
+### Limiti verificati del pacchetto866f
+
+Richiede BANGLEJS2/2v29, bootloader e bootupdate ufficiali LF/CRLF; blocca boot alternativi o non riconosciuti. Usa un provider/journal gia coerente con la sua esecuzione: rifiuta un altro binding attivo o un registro corrotto, percio non e un motore universale da zero. Inventario massimo128file, StorageFile letto integralmente con limite64KiB, piano massimo32KiB, riserva flash almeno2*stagingBytes+65536 e controlli di batteria/spazio. Una volta iniziate le rimozioni non puo annullarle: completa la stessa operazione da staging verificato. Se staging o journal sono corrotti serve recupero assistito; non va ripetuta la pulizia.
+
+Prima di promuovere il nuovo contratto servono test da factory, Vera installato, caricamento parziale e journal estraneo/corrotto; oltre128file e StorageFile oltre64KiB; boot sconosciuto/alternativo; flash insufficiente; spegnimento e perdita BLE prima/durante/dopo wipe, copia e attivazione. Una nuova esecuzione confermata puo sostituire quella vecchia, ma una risposta persa non e mai interpretata come nuovo consenso a cancellare. Firmware non supportato, console irraggiungibile o assenza della riserva minima devono restare arresti espliciti: qualunque stato applicativo non significa qualunque guasto hardware.
