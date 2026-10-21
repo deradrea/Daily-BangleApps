@@ -61,11 +61,18 @@ test('canonical dedicated builder produces 14 verified files and records its rel
   const config=JSON.parse(cp.execFileSync('git',['show',sourceCommit+':initialization/zero/dedicated-release.json'],{cwd:root}));
   const r=require('../../bin/build-veranode-zero.cjs').build(tmp,{targetProfile:'veranode-only',sourceCommit});
   assert.equal(r.bundle.target.files.length,14);assert.equal(r.bundle.bootstrap.length,7);assert.equal(r.bundle.targetProfile,'veranode-only');
-  assert.equal(r.bundle.executionEnabled,config.executionEnabled);assert.equal(r.bundle.hardwareIdentityVerified,config.hardwareIdentityVerified);assert.deepEqual(r.bundle.executionPolicy,config.executionPolicy);
+  assert.equal(r.bundle.executionEnabled,config.executionEnabled);assert.equal('hardwareIdentityVerified' in r.bundle,false);assert.equal('allowedMacs' in r.bundle.executionPolicy,false);assert.deepEqual(r.bundle.executionPolicy,config.executionPolicy);
   for(const f of [...r.bundle.bootstrap,...r.bundle.target.files]){const b=Buffer.from(f.base64,'base64');assert.equal(b.length,f.size);assert.equal(sha(b),f.sha256);}
   assert.equal(r.bundle.target.installOrder.length,13);assert.equal(r.bundle.target.installOrder.at(-1),'.bootcde');assert.equal(r.bundle.target.installOrder.includes('.boot0'),false);
   assert.equal(r.bundle.runtimePackageSha256,parent.runtimePackageSha256);
   for(const name of ['bin/veranode-dedicated-target.cjs','initialization/zero/launcher.js','initialization/zero/dedicated-release.json'])assert.equal(r.bundle.provenance.inputs[name],sha(cp.execFileSync('git',['show',sourceCommit+':'+name],{cwd:root})));
   const again=require('../../bin/build-veranode-zero.cjs').build(tmp,{targetProfile:'veranode-only',sourceCommit});assert.equal(again.sha256,r.sha256);
  }finally{fs.rmSync(tmp,{recursive:true,force:true});}
+});
+
+test('generic release policy delegates concrete identity to server binding without per-MAC builds',()=>{
+ const {validateDedicatedRelease}=require('../../bin/build-veranode-zero.cjs');
+ const config={targetProfile:'veranode-only',board:'BANGLEJS2',firmware:['2v29'],executionEnabled:true,executionPolicy:{scope:'server-authorized-initialization',allowedRoles:['super_admin','platform_admin'],requiresDeviceBinding:true}};
+ assert.equal(validateDedicatedRelease(config),config);
+ for(const change of [{executionPolicy:{...config.executionPolicy,allowedMacs:['FC:0C:5D:40:F0:AA']}},{executionPolicy:{...config.executionPolicy,requiresDeviceBinding:false}},{firmware:['2v30']},{executionPolicy:{...config.executionPolicy,allowedRoles:['worker']}},{hardwareIdentityVerified:true}])assert.throws(()=>validateDedicatedRelease({...config,...change}),/configuration/);
 });

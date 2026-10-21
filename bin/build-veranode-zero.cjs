@@ -2,6 +2,12 @@
 const fs=require('fs'),path=require('path'),cp=require('child_process'),crypto=require('crypto'),acorn=require('acorn');
 const root=path.resolve(__dirname,'..'),repository='https://github.com/deradrea/Daily-BangleApps',sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 const canonical=x=>Array.isArray(x)?'['+x.map(canonical).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canonical(x[k])).join(',')+'}':JSON.stringify(x);
+function validateDedicatedRelease(config){
+ const policy={scope:'server-authorized-initialization',allowedRoles:['super_admin','platform_admin'],requiresDeviceBinding:true};
+ if(!config||canonical(Object.keys(config).sort())!==canonical(['targetProfile','board','firmware','executionEnabled','executionPolicy'].sort())||config.targetProfile!=='veranode-only'||config.board!=='BANGLEJS2'||canonical(config.firmware)!=='["2v29"]'||typeof config.executionEnabled!=='boolean'||canonical(config.executionPolicy)!==canonical(policy))throw Error('Invalid dedicated release configuration');
+ return config;
+}
+
 function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const sourceCommit=cp.execFileSync('git',['rev-parse',(options.sourceCommit||'HEAD')+'^{commit}'],{cwd:root,encoding:'utf8'}).trim(),inputs={};
  const committed=n=>{const b=cp.execFileSync('git',['show',sourceCommit+':'+n],{cwd:root});inputs[n]=sha(b);return b;};
@@ -15,10 +21,7 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  let releaseConfig,target=structuredClone(parent.target.files);
  if(dedicated){
   releaseConfig=JSON.parse(committed('initialization/zero/dedicated-release.json'));
-  if(releaseConfig.targetProfile!=='veranode-only'||releaseConfig.board!=='BANGLEJS2'||canonical(releaseConfig.firmware)!=='["2v29"]'||typeof releaseConfig.executionEnabled!=='boolean'||typeof releaseConfig.hardwareIdentityVerified!=='boolean')throw Error('Invalid dedicated release configuration');
-  const policy=releaseConfig.executionPolicy;
-  if(!policy||policy.scope!=='platform-admin-commissioning'||canonical(policy.allowedRoles)!=='["super_admin","platform_admin"]'||!Array.isArray(policy.allowedMacs)||policy.allowedMacs.length!==1||!/^([A-F0-9]{2}:){5}[A-F0-9]{2}$/.test(policy.allowedMacs[0]))throw Error('Invalid dedicated release scope');
-  if(releaseConfig.executionEnabled&&!releaseConfig.hardwareIdentityVerified)throw Error('Hardware identity must be checked before enabling this release');
+  validateDedicatedRelease(releaseConfig);
   const helper=committed('bin/veranode-dedicated-target.cjs');
   if(!fs.readFileSync(path.join(root,'bin/veranode-dedicated-target.cjs')).equals(helper))throw Error('Dedicated selector differs from canonical source');
   target=require('./veranode-dedicated-target.cjs').create(target,committed('initialization/zero/launcher.js'));
@@ -37,7 +40,7 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const manifest={schema:'vera-bangle-zero-source-manifest/1',sourceRepository:repository,sourceCommit,files:inputs,parentInitializeSha256:parentSha,runtimePackageSha256:parent.runtimePackageSha256};
  const manifestBytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n');
  const executionPolicy=dedicated?releaseConfig.executionPolicy:{scope:'platform-admin-commissioning',allowedRoles:['super_admin','platform_admin'],allowedMacs:['D1:4D:6D:D2:E0:75']};
- const releaseFlags=dedicated?{targetProfile:'veranode-only',hardwareIdentityVerified:releaseConfig.hardwareIdentityVerified}:{};
+ const releaseFlags=dedicated?{targetProfile:'veranode-only'}:{};
  const executionEnabled=dedicated?releaseConfig.executionEnabled:true;
  const bundle={...releaseFlags,executionEnabled,executionPolicy,schema:'vera-bangle-zero-initialize/1',mode:'zero-initialization',protocol:1,board:'BANGLEJS2',firmware:['2v29'],preservesFirmware:true,preserveUserData:false,replaceSettings:true,requiresExistingVera:false,hardwareValidated:false,
   authorization:{enforcement:'consumer',deviceVerified:false,physicalConsent:true,encryptedBle:true},sourceRepository:repository,sourceCommit,sourceManifestSha256:sha(manifestBytes),parentInitializeSha256:parentSha,runtimeRevision:parent.runtimeRevision,runtimePackageSha256:parent.runtimePackageSha256,home:'veranode.app.js',
@@ -53,4 +56,4 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  return {revision,sha256:hash,size:bytes.length,path:path.join(dir,'initialize.json'),bundle,descriptor};
 }
 if(require.main===module){const r=build(undefined,process.argv.includes('--dedicated')?{targetProfile:'veranode-only'}:{});console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
-module.exports={build,canonical};
+module.exports={build,canonical,validateDedicatedRelease};
