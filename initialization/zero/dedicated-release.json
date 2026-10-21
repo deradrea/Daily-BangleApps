@@ -1,0 +1,19 @@
+{
+  "targetProfile": "veranode-only",
+  "board": "BANGLEJS2",
+  "firmware": [
+    "2v29"
+  ],
+  "executionEnabled": false,
+  "hardwareIdentityVerified": false,
+  "executionPolicy": {
+    "scope": "platform-admin-commissioning",
+    "allowedRoles": [
+      "super_admin",
+      "platform_admin"
+    ],
+    "allowedMacs": [
+      "FC:0C:5D:40:F0:AA"
+    ]
+  }
+}

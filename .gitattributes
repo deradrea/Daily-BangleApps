@@ -15,3 +15,5 @@ dist/veranode-upgrade/** -text
 initialization/zero/** -text
 bin/build-veranode-zero.cjs -text
 dist/veranode-zero/** -text
+
+bin/veranode-dedicated-target.cjs -text

@@ -10,7 +10,20 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const parent=JSON.parse(parentRaw),file=(name,b)=>({name,size:b.length,sha256:sha(b),base64:b.toString('base64')});
  const pairs=[['vz.provider.js','provider.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
  const bootstrap=pairs.map(([name,n])=>{const b=committed('initialization/zero/'+n);acorn.parse(b.toString(),{ecmaVersion:2015});if(/Number\s*\.\s*(?:isInteger|isFinite|isSafeInteger)\s*\(/.test(b.toString()))throw Error('Unsupported firmware number helper');return file(name,b);});
- const target=structuredClone(parent.target.files),bootIndex=target.findIndex(f=>f.name==='.boot0');
+ const dedicated=options.targetProfile==='veranode-only';
+ if(options.targetProfile!==undefined&&!dedicated)throw Error('Unsupported target profile');
+ let releaseConfig,target=structuredClone(parent.target.files);
+ if(dedicated){
+  releaseConfig=JSON.parse(committed('initialization/zero/dedicated-release.json'));
+  if(releaseConfig.targetProfile!=='veranode-only'||releaseConfig.board!=='BANGLEJS2'||canonical(releaseConfig.firmware)!=='["2v29"]'||typeof releaseConfig.executionEnabled!=='boolean'||typeof releaseConfig.hardwareIdentityVerified!=='boolean')throw Error('Invalid dedicated release configuration');
+  const policy=releaseConfig.executionPolicy;
+  if(!policy||policy.scope!=='platform-admin-commissioning'||canonical(policy.allowedRoles)!=='["super_admin","platform_admin"]'||!Array.isArray(policy.allowedMacs)||policy.allowedMacs.length!==1||!/^([A-F0-9]{2}:){5}[A-F0-9]{2}$/.test(policy.allowedMacs[0]))throw Error('Invalid dedicated release scope');
+  if(releaseConfig.executionEnabled&&!releaseConfig.hardwareIdentityVerified)throw Error('Hardware identity must be checked before enabling this release');
+  const helper=committed('bin/veranode-dedicated-target.cjs');
+  if(!fs.readFileSync(path.join(root,'bin/veranode-dedicated-target.cjs')).equals(helper))throw Error('Dedicated selector differs from canonical source');
+  target=require('./veranode-dedicated-target.cjs').create(target,committed('initialization/zero/launcher.js'));
+ }
+ const bootIndex=target.findIndex(f=>f.name==='.boot0');
  const bootPrefix="(function(){var b=require('Storage').read('0vz.boot.js');if(typeof b!=='string')throw Error('Vera zero guard assente');eval(b);})();\n";
  target[bootIndex]=file('.boot0',Buffer.concat([Buffer.from(bootPrefix),Buffer.from(target[bootIndex].base64,'base64')]));
  const rows=target.map(({name,size,sha256})=>({name,size,sha256})),fingerprint=sha(Buffer.from(canonical(rows))),stagingBytes=target.reduce((n,f)=>n+f.size,0);
@@ -23,8 +36,10 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const builderSha256=sha(committed('bin/build-veranode-zero.cjs'));
  const manifest={schema:'vera-bangle-zero-source-manifest/1',sourceRepository:repository,sourceCommit,files:inputs,parentInitializeSha256:parentSha,runtimePackageSha256:parent.runtimePackageSha256};
  const manifestBytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n');
- const executionPolicy={scope:'platform-admin-commissioning',allowedRoles:['super_admin','platform_admin'],allowedMacs:['D1:4D:6D:D2:E0:75']};
- const bundle={executionEnabled:true,executionPolicy,schema:'vera-bangle-zero-initialize/1',mode:'zero-initialization',protocol:1,board:'BANGLEJS2',firmware:['2v29'],preservesFirmware:true,preserveUserData:false,replaceSettings:true,requiresExistingVera:false,hardwareValidated:false,
+ const executionPolicy=dedicated?releaseConfig.executionPolicy:{scope:'platform-admin-commissioning',allowedRoles:['super_admin','platform_admin'],allowedMacs:['D1:4D:6D:D2:E0:75']};
+ const releaseFlags=dedicated?{targetProfile:'veranode-only',hardwareIdentityVerified:releaseConfig.hardwareIdentityVerified}:{};
+ const executionEnabled=dedicated?releaseConfig.executionEnabled:true;
+ const bundle={...releaseFlags,executionEnabled,executionPolicy,schema:'vera-bangle-zero-initialize/1',mode:'zero-initialization',protocol:1,board:'BANGLEJS2',firmware:['2v29'],preservesFirmware:true,preserveUserData:false,replaceSettings:true,requiresExistingVera:false,hardwareValidated:false,
   authorization:{enforcement:'consumer',deviceVerified:false,physicalConsent:true,encryptedBle:true},sourceRepository:repository,sourceCommit,sourceManifestSha256:sha(manifestBytes),parentInitializeSha256:parentSha,runtimeRevision:parent.runtimeRevision,runtimePackageSha256:parent.runtimePackageSha256,home:'veranode.app.js',
   binding:{fields:['executionId','generation','deviceId','mac','board','firmware','packageSha256','intent'],intent:'initialize-from-zero',generation:'uuid'},
   rpc:{factory:"(global.VeraZero||(global.VeraZero=require('vz.provider.js').create(require('vz.platform.js').create())))",methods:['inspect','requestSecurity','securityStatus','status','prepare','recover','stage','beginWipe','step','verify','syncTime','activate','confirm','inventoryPage']},
@@ -33,9 +48,9 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
   recovery:{journal:['vz.state0','vz.state1'],strategy:'same-execution-selective-wipe-once',eraseAll:false,bootEntries:['.varimg','.bootcde','.bootrst','.boot3','.boot2','.boot1','.bootPowerOn','.boot0'],cleanupBootEntries:['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst'],bootGuard:'0vz.boot.js',bootCommitLast:'.boot0',newIntentCanReplaceOldCheckpoint:true},
   provenance:{builderSha256,inputs},license:parent.license};
  const bytes=Buffer.from(JSON.stringify(bundle,null,2)+'\n'),hash=sha(bytes),revision='veranode-zero-1-'+hash.slice(0,16),dir=path.join(output,revision);
- const descriptor={schema:'vera-bangle-zero-descriptor/1',revision,sha256:hash,size:bytes.length,board:bundle.board,firmware:bundle.firmware,mode:bundle.mode,protocol:1,sourceRepository:repository,sourceCommit,sourceManifestSha256:bundle.sourceManifestSha256,targetFingerprint:fingerprint,executionEnabled:true,executionPolicy,hardwareValidated:false};
+ const descriptor={schema:'vera-bangle-zero-descriptor/1',revision,sha256:hash,size:bytes.length,board:bundle.board,firmware:bundle.firmware,mode:bundle.mode,protocol:1,sourceRepository:repository,sourceCommit,sourceManifestSha256:bundle.sourceManifestSha256,targetFingerprint:fingerprint,...releaseFlags,executionEnabled,executionPolicy,hardwareValidated:false};
  fs.mkdirSync(dir,{recursive:true});for(const [name,b]of [['initialize.json',bytes],['descriptor.json',Buffer.from(JSON.stringify(descriptor,null,2)+'\n')],['source-manifest.json',manifestBytes]]){const dest=path.join(dir,name);if(fs.existsSync(dest)){if(!fs.readFileSync(dest).equals(b))throw Error('Immutable zero conflict');}else fs.writeFileSync(dest,b,{flag:'wx'});}
  return {revision,sha256:hash,size:bytes.length,path:path.join(dir,'initialize.json'),bundle,descriptor};
 }
-if(require.main===module){const r=build();console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
+if(require.main===module){const r=build(undefined,process.argv.includes('--dedicated')?{targetProfile:'veranode-only'}:{});console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
 module.exports={build,canonical};

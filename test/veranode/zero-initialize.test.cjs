@@ -5,7 +5,8 @@ const parent=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize
 const payload=Object.fromEntries(parent.target.files.map(f=>[f.name,f.name==='setting.json'?'{"clock":"veranode.app.js","clockHasWidgets":false}':'new:'+f.name]));
 const target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
 const binding={executionId:'12345678-1234-4234-8234-123456789abc',generation:'abcdef12-1234-4234-8234-123456789abc',deviceId:97,mac:'D1:4D:6D:D2:E0:75',board:'BANGLEJS2',firmware:'2v29',packageSha256:'a'.repeat(64),intent:'initialize-from-zero'};
-function fixture(mode='factory'){
+function fixture(mode='factory',selectedPayload=payload){
+ const payload=selectedPayload,target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
  const files=new Map([['.boot0','old boot'],['.bootcde','unknown loader'],['.boot1','alternate'],['.varimg','old image'],['bootupdate.js','old update'],['foreign.app.js','old app'],['setting.json','old settings']]),sf=new Map(),sfChunks=new Map(),log=[],feedback=[],timers=[],intervals=[],drawn=[];
  if(mode==='vera'){files.set('veranode.core.js','old Vera');files.set('veranode.policy.json','old policy');sf.set('veranode.s0','sample-data');}
  if(mode==='partial'){files.set('verai.state0','broken legacy checkpoint');files.set('verai.plan','old plan');files.set('verai.f0','partial');files.set('veram.state1','old upgrade');sf.set('veranode.s0','old samples');}
@@ -136,4 +137,13 @@ test('a valid hash cannot make a malformed checkpoint executable and one torn ba
  const f=fixture();f.prepare();const prior=f.env.load();f.files.set('vz.state'+prior.sequence%2,'torn');f.reboot();assert.equal(f.p.status().phase,'staging');
  const bad={...f.env.load(),installed:-1};f.env.save(bad);f.reboot();assert.equal(f.p.status().phase,'checkpoint-error');
  const before=f.mutations;assert.throws(()=>f.p.beginWipe(target.fingerprint));assert.equal(f.mutations,before);
+});
+
+test('the same zero protocol installs a minimal Vera-only target without stock apps or old data',()=>{
+ const selected=require('../../bin/veranode-dedicated-target.cjs').create(parent.target.files,fs.readFileSync(path.join(dir,'launcher.js')));
+ const data=Object.fromEntries(selected.map(f=>[f.name,Buffer.from(f.base64,'base64').toString('latin1')]));
+ const f=fixture('partial',data);f.files.set('setting.app.js','old Settings');f.files.set('launch.info','old app list');
+ assert.equal(f.finish().phase,'complete');assert.equal(f.p.status().installed,14);
+ assert.equal(f.files.has('setting.app.js'),false);assert.equal(f.files.has('launch.info'),false);assert.equal(f.sf.size,0);
+ assert.equal(f.files.get('launch.app.js'),data['launch.app.js']);assert.equal(f.files.get('veranode.app.js'),data['veranode.app.js']);
 });

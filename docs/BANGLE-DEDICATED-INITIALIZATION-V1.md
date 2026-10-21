@@ -170,3 +170,33 @@ base aggiunge l'esecuzione esplicita del guard.
 Nessuna prova BLE o installazione E075 eseguita da questa chat durante questo
 rilascio. Vera Web e l'unico proprietario della sessione BLE di verifica fisica;
 nessun reset o pulizia aggiuntiva e implicito nel rilascio GitHub.
+
+
+## Preparazione Vera Node come unica app d'uso - F0AA
+
+Il builder supporta `--dedicated`, selettore canonico
+`bin/veranode-dedicated-target.cjs` e configurazione Git
+`initialization/zero/dedicated-release.json`. Il profilo `veranode-only` ha
+14 target invece dei precedenti 22. I sette supporti di recupero restano separati.
+
+Target esatti: .boot0, .bootcde, boot.info, bootupdate.js, launch.app.js,
+setting.json, veranode.clock.js, veranode.app.js, veranode.core.js,
+veranode.runtime.js, veranode.wire.js, veranode.img, veranode.boot.js,
+veranode.info. Il launcher e un breve rientro in Vera, senza menu di app.
+Le app Settings/Launcher standard, i loro registri, icone, impostazioni e
+moduli dipendenti sono rimossi. Runtime8file e JSON restano byte identici.
+
+Anagrafica letta da Vera Web: device8, FC:0C:5D:40:F0:AA. Non e ancora una
+verifica BLE dell'identita o del firmware. La configurazione candidata ha
+executionEnabled=false e hardwareIdentityVerified=false; non va catalogata
+come eseguibile finche MAC e firmware effettivi non sono letti. Il vincolo
+firmware resta BANGLEJS2/2v29, senza ampliamenti dedotti da un reset o dal
+riferimento generico all'ultima versione. La policy resta per amministratori
+piattaforma e un solo MAC completo. Il consumer deve validare l'inventario
+14 file della nuova release e il suo hash; il pacchetto22 precedente resta
+immutato. La preparazione non autorizza una cancellazione fisica.
+
+I test verificano anche rigenerazione del boot Espruino, avvio del vero runtime
+e quadrante dai file congelati, visualizzazione iniziale, standby automatico,
+HRM e temperatura simulati salvati offline, senza dipendenze Settings/Launcher.
+Queste sono prove software in memoria; nessun dispositivo e modificato.
