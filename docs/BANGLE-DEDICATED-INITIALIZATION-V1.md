@@ -114,3 +114,59 @@ Checkpoint minimo: executionId/generation/packageSHA, fase, wipeConsumed, indice
 Richiede BANGLEJS2/2v29, bootloader e bootupdate ufficiali LF/CRLF; blocca boot alternativi o non riconosciuti. Usa un provider/journal gia coerente con la sua esecuzione: rifiuta un altro binding attivo o un registro corrotto, percio non e un motore universale da zero. Inventario massimo128file, StorageFile letto integralmente con limite64KiB, piano massimo32KiB, riserva flash almeno2*stagingBytes+65536 e controlli di batteria/spazio. Una volta iniziate le rimozioni non puo annullarle: completa la stessa operazione da staging verificato. Se staging o journal sono corrotti serve recupero assistito; non va ripetuta la pulizia.
 
 Prima di promuovere il nuovo contratto servono test da factory, Vera installato, caricamento parziale e journal estraneo/corrotto; oltre128file e StorageFile oltre64KiB; boot sconosciuto/alternativo; flash insufficiente; spegnimento e perdita BLE prima/durante/dopo wipe, copia e attivazione. Una nuova esecuzione confermata puo sostituire quella vecchia, ma una risposta persa non e mai interpretata come nuovo consenso a cancellare. Firmware non supportato, console irraggiungibile o assenza della riserva minima devono restare arresti espliciti: qualunque stato applicativo non significa qualunque guasto hardware.
+
+
+## Pacchetto zero implementato e congelato - 21 ottobre 2026
+
+Revisione `veranode-zero-1-5b6c77bc76571b8a`, sorgente
+`f4f892e3b4a5540fabdab3c8540108f5878eb83e`.
+Builder canonico: `bin/build-veranode-zero.cjs`; sorgenti: `initialization/zero/`.
+Asset: `dist/veranode-zero/veranode-zero-1-5b6c77bc76571b8a/`.
+
+- initialize.json: `5b6c77bc76571b8ae2e83d614f297d3b1b6ac553c29feee569edbb4b6ec6a5f3`
+- descriptor.json: `2684482b67a9bfb1c88e7725fbc24fa8f44d354d369c1361aa830eaf4bf0d327`
+- source-manifest.json: `5304ec78af2c5984be4ab92707a9b6ae18c34b6c438b9e1ffe8cbba2e7ea603e`
+
+Schema `vera-bangle-zero-initialize/1`, protocollo 1. Compatibilita stretta
+BANGLEJS2 / firmware 2v29. La politica consumer e server abilita soltanto
+super_admin o platform_admin sul MAC D1:4D:6D:D2:E0:75, nella pratica corrente.
+Il pacchetto non prova un'autorizzazione server da solo: l'installer verifica
+MaintenanceAccess, ruolo, MAC, hash e grant prima di ogni scrittura.
+
+Il binding ha esattamente executionId, generation, deviceId, mac, board,
+firmware, packageSha256, intent; intent vale initialize-from-zero.
+La conferma distruttiva e il consenso fisico attuali precedono beginWipe.
+La ripresa conserva executionId e generation e non ripete beginWipe come nuova
+operazione. Non riassegna il dispositivo. Aggiorna Vera resta distinto e
+preservante: questo pacchetto e esclusivamente l'inizializzazione da zero.
+
+7 file di supporto vengono verificati, poi 22 target sono caricati in staging.
+Doppio checkpoint con SHA e sequenza, fase e operazione pendente precedono ogni
+modifica. I singoli segmenti StorageFile sono cancellati con nome fisico,
+checkpoint e verifica di assenza: la ripresa non dipende dall'esistenza del
+primo segmento. Nessuna eraseAll, nessuna lettura integrale dei dati precedenti.
+
+21 target sono installati prima dell'attivazione, con bootcde per ultimo.
+L'orario UTC di Vera e applicato nella fase verified prima del primo avvio;
+boot0 e scritto per ultimo. Il guard registra la generazione del vero cold boot.
+confirm richiede quel riscontro, il quadrante configurato e un collector attivo,
+programmato e con richiesta HRM. Non equivale a rilevamento fisico riuscito:
+sensorSamplesVerified e clockVerified restano false fino alle verifiche del
+consumer. Esso legge tickCount, heartEvents, temperatureReads, lastRecordAt,
+nextRecordAt e sampleCount per controllare che avanzino e verifica lo scarto UTC.
+
+Il display ha fase, anello, conteggio reale, attivita periodica, consenso touch
+e messaggio di ripresa/errore. Il tasto non chiude la domanda. Il consumer
+usa feedbackBootstrapExpression prima dell'upload e uiBootstrapExpression per
+montare il consenso dopo la verifica dei moduli, anche su dispositivo di fabbrica.
+
+Verifica locale: 178 test generali piu 5 del pacchetto, 183 superati. Inclusi
+interruzione dopo ogni mutazione, archivio con primo segmento gia assente,
+consenso factory, vero guard cold boot, checkpoint malformato, 29 hash payload,
+provenienza Git e ricostruzione byte per byte dei tre asset. Runtime e contratto
+JSON invariati rispetto al pacchetto base 866f; soltanto il boot0 del target
+base aggiunge l'esecuzione esplicita del guard.
+
+Nessuna prova BLE o installazione E075 eseguita da questa chat durante questo
+rilascio. Vera Web e l'unico proprietario della sessione BLE di verifica fisica;
+nessun reset o pulizia aggiuntiva e implicito nel rilascio GitHub.

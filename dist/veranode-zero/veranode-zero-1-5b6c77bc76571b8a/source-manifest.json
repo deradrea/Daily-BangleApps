@@ -1,0 +1,17 @@
+{
+  "schema": "vera-bangle-zero-source-manifest/1",
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "sourceCommit": "f4f892e3b4a5540fabdab3c8540108f5878eb83e",
+  "files": {
+    "dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+    "initialization/zero/provider.js": "48d9f8bb50d6d9f8a33a52e9fac48b8472554e3d56b4bf14716cea5b3d83ff3d",
+    "initialization/zero/platform.js": "750f3508e8cef0e862a4d5342ec1facffeae86a330e496688d9e9df17c604b1d",
+    "initialization/zero/recovery.js": "dc615e066e56a5c0aa0ed125d2fdb14012681ce150757cf26f0318f5b59af454",
+    "initialization/zero/app.js": "2f8c36e8bfc9358c7f15776452a1be7a138075b2376ed05efd3e030d9bbf2038",
+    "initialization/zero/display.js": "a9200dc7748fe92ad2fe84b2db8250b73ccbcd80eaedc28102e118b760e0158f",
+    "initialization/zero/guard.js": "81ae1b14a5f8566669770c242f7eeef61172c0f30863d2fa7d4b3a26570e45d1",
+    "bin/build-veranode-zero.cjs": "d58cf59557a06cfd20e4ff64db98bef3c1ee8a5df8f442df6a9babdac394172c"
+  },
+  "parentInitializeSha256": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+  "runtimePackageSha256": "7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a"
+}
