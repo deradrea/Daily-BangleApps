@@ -4,7 +4,7 @@
   "firmware": [
     "2v29"
   ],
-  "executionEnabled": false,
+  "executionEnabled": true,
   "executionPolicy": {
     "scope": "server-authorized-initialization",
     "allowedRoles": [
