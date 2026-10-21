@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/espruino/EspruinoWebIDE",
+  "commit": "fb9f890377f45851577c658bcfc8b60e973a2d6a",
+  "version": "2v29",
+  "board": "EMSCRIPTEN2",
+  "files": {
+    "emulator_banglejs2.js": "a874c6cb9489f613657207d31b36a56d92aad3b023570d54fa9177664041d9a7",
+    "emu_banglejs2.js": "f3d6d0418368801887bdcafbdcae5818d00a68705034bab46d3c1018a51e1d22",
+    "common.js": "5825d808d09e18bed67abb05bc98be822e9697a14bc74621bd4ee3eb46bcd791"
+  }
+}
