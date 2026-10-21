@@ -14,6 +14,10 @@ test('upgrade provenance and all sidecars are exact committed bytes, with unchan
  const cp=require('node:child_process'),root=path.resolve(__dirname,'../..'),out=fs.mkdtempSync(path.join(os.tmpdir(),'vera-upgrade-git-'));
  try{const r=build(out),p=r.plan,old=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-upgrade/veranode-upgrade-1-d749066fdad7002d/upgrade.json')));
   assert.deepEqual(p.target,old.target);assert.deepEqual(p.sources,old.sources);assert.deepEqual(p.maintenance.backupExclusions,old.maintenance.backupExclusions);
+  assert.deepEqual(p.maintenance.bootloader,old.maintenance.bootloader);
+  const init=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json')));
+  assert.deepEqual(p.maintenance.acceptedBootloaderSha256,init.target.acceptedBootloaderSha256);
+  assert.deepEqual(p.maintenance.acceptedBootupdateSha256,init.target.acceptedBootupdateSha256);
   for(const [name,sha]of Object.entries(p.provenance.inputs)){const raw=cp.execFileSync('git',['show',p.provenance.sourceCommit+':'+name],{cwd:root});assert.equal(crypto.createHash('sha256').update(raw).digest('hex'),sha,name);}
   for(const [name,src]of [['veram.provider.js','provider.js'],['veram.platform.js','platform.js'],['veram.0.boot.js','guard.js'],['veram.app.js','app.js']]){
    const raw=cp.execFileSync('git',['show',p.provenance.sourceCommit+':maintenance/veranode/'+src],{cwd:root});assert.equal(Buffer.from(p.maintenance.files.find(f=>f.name===name).base64,'base64').equals(raw),true,name);
