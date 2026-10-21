@@ -4,13 +4,14 @@ exports.create = function(env) {
     'veranode.wire.js','veranode.img','veranode.boot.js','veranode.info'];
   if (!env.isolated()) throw new Error('Ambiente non isolato');
   var state = env.load(), lease, expires = 0, upload, rowsCache;
+  function integer(n) { return typeof n==='number' && isFinite(n) && Math.floor(n)===n; }
   function fail(text) { throw new Error(text); }
   function digest(raw) { return env.hash(raw); }
   function persist() { env.save(state); }
   if (!state || !state.binding || !state.plan || !Array.isArray(state.plan.files) || state.plan.files.length!==names.length ||
     names.some(function(n){return state.plan.files.filter(function(f){return f.name===n;}).length!==1;}) ||
     state.plan.files.some(function(f){return !/^[a-f0-9]{64}$/.test(f.hash)||!/^[a-f0-9]{64}$/.test(f.sourceHash)||
-      !Number.isInteger(f.size)||!Number.isInteger(f.sourceSize)||f.size<1||f.sourceSize<1||f.size>100000||f.sourceSize>100000;})) fail('Piano manutenzione non valido');
+      !integer(f.size)||!integer(f.sourceSize)||f.size<1||f.sourceSize<1||f.size>100000||f.sourceSize>100000;})) fail('Piano manutenzione non valido');
 
   function same(a,b) { return env.canonical(a) === env.canonical(b); }
   function allowed(name, raw) {
@@ -46,7 +47,7 @@ exports.create = function(env) {
   function begin(binding, ttl, resume) {
     if (!env.isolated() || !env.encrypted() || !env.consent()) fail('Consenso necessario');
     if (!same(binding,state.binding) || (resume && resume!==state.snapshot)) fail('Contesto diverso');
-    if (!Number.isInteger(ttl) || ttl<1 || ttl>60000) fail('Durata non valida');
+    if (!integer(ttl) || ttl<1 || ttl>60000) fail('Durata non valida');
     recover();
     if (!state.protected) {
       var rows=inventoryRows();
@@ -59,11 +60,11 @@ exports.create = function(env) {
     lease=env.random(); expires=env.now()+ttl;upload=undefined;rowsCache=undefined;
     return response();
   }
-  function renew(token,ttl) { guard(token);if(!Number.isInteger(ttl)||ttl<1||ttl>60000)fail('Durata non valida');expires=env.now()+ttl;return response(); }
+  function renew(token,ttl) { guard(token);if(!integer(ttl)||ttl<1||ttl>60000)fail('Durata non valida');expires=env.now()+ttl;return response(); }
   function inventory(token) { guard(token);recover();var rows=inventoryRows();unchanged(rows);rowsCache=rows;return {token:lease,snapshot:state.snapshot,isolated:true,binding:state.binding,files:rows}; }
   function inventoryPage(token,offset,limit) {
     guard(token);
-    if(!Number.isInteger(offset)||!Number.isInteger(limit)||offset<0||limit<1||limit>32)fail('Pagina inventario non valida');
+    if(!integer(offset)||!integer(limit)||offset<0||limit<1||limit>32)fail('Pagina inventario non valida');
     if(offset===0)inventory(token);
     if(!rowsCache||offset>rowsCache.length)fail('Inventario da rileggere');
     return {token:lease,snapshot:state.snapshot,isolated:true,binding:state.binding,offset:offset,
@@ -71,13 +72,13 @@ exports.create = function(env) {
   }
   function read(token, descriptor, offset, length) {
     guard(token);if(!rowsCache)rowsCache=inventoryRows();var f=rowsCache.find(function(r){return r.kind===descriptor.kind&&r.name===descriptor.name;});
-    if (!f || !same(f,descriptor) || !Number.isInteger(offset)||!Number.isInteger(length)||offset<0||length<1||length>512||offset+length>f.size) fail('Blocco non valido');
+    if (!f || !same(f,descriptor) || !integer(offset)||!integer(length)||offset<0||length<1||length>512||offset+length>f.size) fail('Blocco non valido');
     return {token:lease,offset:offset,base64:env.base64(env.read(f,offset,length))};
   }
   function replaceSoftware(token,name,offset,total,base64) {
     guard(token);if(offset===0)unchanged();
     var p=state.plan.files.find(function(f){return f.name===name;}), raw=env.unbase64(base64);
-    if (!p || !names.includes(name) || !Number.isInteger(offset)||!Number.isInteger(total)||offset<0||raw.length<1||raw.length>384||offset+raw.length>total||total>100000 ||
+    if (!p || !names.includes(name) || !integer(offset)||!integer(total)||offset<0||raw.length<1||raw.length>384||offset+raw.length>total||total>100000 ||
       (total!==p.size && total!==p.sourceSize)) fail('File software non consentito');
     if (offset===0) { upload={name:name,total:total,next:0};env.writeNormal('veram.stage','',0,total); }
     if (!upload||upload.name!==name||upload.total!==total||upload.next!==offset) fail('Ordine blocchi diverso');

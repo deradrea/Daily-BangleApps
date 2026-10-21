@@ -3,7 +3,7 @@ const create=require('../../maintenance/veranode/provider.js').create;
 const names=['veranode.clock.js','veranode.app.js','veranode.core.js','veranode.runtime.js','veranode.wire.js','veranode.img','veranode.boot.js','veranode.info'];
 const hash=x=>crypto.createHash('sha256').update(x,'latin1').digest('hex');
 const canonical=x=>x&&typeof x==='object'?(Array.isArray(x)?'['+x.map(canonical).join(',')+']':'{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+canonical(x[k])).join(',')+'}'):JSON.stringify(x);
-function fixture(){
+function fixture(providerCreate=create){
  let saved, time=0, isolated=true, encrypted=true, consent=true, failed=false, writes=0, activated=false;
  const files=new Map(names.map(n=>[n,'old-'+n])),data=new Map([['veranode.s0','sample\u0000\u00ff\n']]);
  files.set('veranode.policy.json','profile-exact-bytes');files.set('setting.json','clock and brightness');
@@ -18,7 +18,7 @@ function fixture(){
     if(size!==undefined)files.set(n,'\xff'.repeat(size));
     if(offset===undefined)files.set(n,raw);else{let old=files.get(n);files.set(n,old.slice(0,offset)+raw+old.slice(offset+raw.length));}
   },read:(f,o,l)=>(f.kind==='normal'?files:data).get(f.name).slice(o,o+l),base64:x=>Buffer.from(x,'latin1').toString('base64'),unbase64:x=>Buffer.from(x,'base64').toString('latin1'),progress:()=>{},activate:()=>{activated=true;}};
- return {env,files,data,binding,provider:()=>create(env),setTime:t=>time=t,setConsent:v=>consent=v,setEncrypted:v=>encrypted=v,setIsolated:v=>isolated=v,fail:v=>failed=v,get saved(){return saved;},get writes(){return writes;},get activated(){return activated;}};
+ return {env,files,data,binding,provider:()=>providerCreate(env),setTime:t=>time=t,setConsent:v=>consent=v,setEncrypted:v=>encrypted=v,setIsolated:v=>isolated=v,fail:v=>failed=v,get saved(){return saved;},get writes(){return writes;},get activated(){return activated;}};
 }
 function start(f){const m=f.provider(),r=m.begin(f.binding,60000,null);return {m,t:r.token};}
 function write(m,t,n,raw){return m.replaceSoftware(t,n,0,raw.length,Buffer.from(raw,'latin1').toString('base64'));}
@@ -75,4 +75,42 @@ test('paged inventory fits UART response bounds and returns a stable complete ar
  const {m,t}=start(f),rows=[];let offset=0,total=0;
  do{const page=m.inventoryPage(t,offset,32);assert.ok(JSON.stringify(page).length<12000);assert.equal(page.offset,offset);rows.push(...page.files);offset=page.next;total=page.total;}while(offset<total);
  assert.equal(rows.length,211);assert.equal(new Set(rows.map(f=>f.kind+':'+f.name)).size,rows.length);
+});
+
+
+test('Espruino 2v29 provider rejects malformed numbers and preserves data through interrupted upgrade without Number helpers',()=>{
+ const fs=require('fs'),vm=require('vm'),path=require('path');
+ const context=vm.createContext({exports:{},Number:{}});
+ vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../../maintenance/veranode/provider.js'),'utf8'),context);
+ const f=fixture(context.exports.create),originalData=structuredClone(f.data),originalProfile=f.files.get('veranode.policy.json');
+ const m=f.provider();
+ for(const ttl of [NaN,Infinity,-Infinity,0,-1,1.5,'100',null])assert.throws(()=>m.begin(f.binding,ttl,null),/Durata/);
+ const t=m.begin(f.binding,60000,null).token;
+ for(const bad of [NaN,Infinity,-Infinity,-1,1.5,'0',null]){
+  assert.throws(()=>m.inventoryPage(t,bad,1),/Pagina/);
+  assert.throws(()=>m.inventoryPage(t,0,bad),/Pagina/);
+  assert.throws(()=>m.replaceSoftware(t,names[0],bad,10,'YQ=='),/software non consentito/);
+ }
+ f.fail(true);assert.throws(()=>write(m,t,names[0],'new-'+names[0]),/power-loss/);
+ f.fail(false);const resumed=f.provider(),lease=resumed.begin(f.binding,60000,'snapshot-test-001').token;
+ assert.equal(f.files.get(names[0]),'old-'+names[0]);
+ for(const name of names)write(resumed,lease,name,'new-'+name);
+ assert.equal(resumed.activate(lease,false).activationRequested,true);
+ assert.deepEqual(f.data,originalData);assert.equal(f.files.get('veranode.policy.json'),originalProfile);
+ assert.equal(f.files.get('setting.json'),'clock and brightness');
+});
+
+test('published d749 failure is reproduced before any runtime write when Number helpers are absent',()=>{
+ const fs=require('fs'),vm=require('vm'),path=require('path');
+ const pkg=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../dist/veranode-upgrade/veranode-upgrade-1-d749066fdad7002d/upgrade.json')));
+ const code=Buffer.from(pkg.maintenance.files.find(f=>f.name==='veram.provider.js').base64,'base64').toString();
+ const context=vm.createContext({exports:{},Number:{}});vm.runInContext(code,context);
+ const f=fixture(context.exports.create);assert.throws(()=>f.provider(),/isInteger/);assert.equal(f.writes,0);
+ assert.equal(f.files.get('veranode.policy.json'),'profile-exact-bytes');
+});
+
+test('missing or unrecognized Vera source fails before any preserving-upgrade write',()=>{
+ for(const mode of ['missing','unknown']){const f=fixture();if(mode==='missing')f.files.delete(names[0]);else f.files.set(names[0],'not an approved Vera build');
+  assert.throws(()=>start(f),/Software origine diverso/);assert.equal(f.writes,0);assert.equal(f.saved.protected,undefined);
+  assert.equal(f.data.get('veranode.s0'),'sample\u0000\u00ff\n');assert.equal(f.files.get('veranode.policy.json'),'profile-exact-bytes');}
 });
