@@ -9,7 +9,14 @@ function validateDedicatedRelease(config){
 }
 
 function build(output=path.join(root,'dist/veranode-zero'),options={}){
- const sourceCommit=cp.execFileSync('git',['rev-parse',(options.sourceCommit||'HEAD')+'^{commit}'],{cwd:root,encoding:'utf8'}).trim(),inputs={};
+ const sourceCommit=cp.execFileSync('git',['rev-parse',(options.sourceCommit||'HEAD')+'^{commit}'],{cwd:root,encoding:'utf8'}).trim();
+ // Historical rebuilds must execute the recorded builder, not today's logic.
+ const builderBytes=cp.execFileSync('git',['show',sourceCommit+':bin/build-veranode-zero.cjs'],{cwd:root});
+ if(module.veraCanonicalSourceCommit!==sourceCommit&&!fs.readFileSync(__filename).equals(builderBytes)){
+  const Module=require('node:module'),historical=new Module(__filename,module);historical.filename=__filename;historical.paths=module.paths;historical.veraCanonicalSourceCommit=sourceCommit;historical._compile(builderBytes.toString('utf8'),__filename);
+  return historical.exports.build(output,{...options,sourceCommit});
+ }
+ const inputs={};
  const committed=n=>{const b=cp.execFileSync('git',['show',sourceCommit+':'+n],{cwd:root});inputs[n]=sha(b);return b;};
  const parentRaw=committed('dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json'),parentSha='866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4';
  if(sha(parentRaw)!==parentSha)throw Error('Official base changed');
