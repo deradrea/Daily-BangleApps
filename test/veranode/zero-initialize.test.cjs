@@ -5,14 +5,14 @@ const parent=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize
 const payload=Object.fromEntries(parent.target.files.map(f=>[f.name,f.name==='setting.json'?'{"clock":"veranode.app.js","clockHasWidgets":false}':'new:'+f.name]));
 const target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
 const binding={executionId:'12345678-1234-4234-8234-123456789abc',generation:'abcdef12-1234-4234-8234-123456789abc',deviceId:97,mac:'D1:4D:6D:D2:E0:75',board:'BANGLEJS2',firmware:'2v29',packageSha256:'a'.repeat(64),intent:'initialize-from-zero'};
-function fixture(mode='factory',selectedPayload=payload){
+function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  const payload=selectedPayload,target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
  const files=new Map([['.boot0','old boot'],['.bootcde','unknown loader'],['.boot1','alternate'],['.varimg','old image'],['bootupdate.js','old update'],['foreign.app.js','old app'],['setting.json','old settings']]),sf=new Map(),sfChunks=new Map(),log=[],feedback=[],timers=[],intervals=[],drawn=[];
  if(mode==='vera'){files.set('veranode.core.js','old Vera');files.set('veranode.policy.json','old policy');sf.set('veranode.s0','sample-data');}
  if(mode==='partial'){files.set('verai.state0','broken legacy checkpoint');files.set('verai.plan','old plan');files.set('verai.f0','partial');files.set('veram.state1','old upgrade');sf.set('veranode.s0','old samples');}
  const sources=[['vz.provider.js','provider.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
  for(const [name,source]of sources)files.set(name,fs.readFileSync(path.join(dir,source),'utf8'));
- const localTarget={...target,supportFiles:sources.map(([name])=>({name,size:files.get(name).length,sha256:hash(files.get(name))}))};
+ const localTarget={...target,authorizationMode:authorizationMode,supportFiles:sources.map(([name])=>({name,size:files.get(name).length,sha256:hash(files.get(name))}))};
  files.set('vz.target.js','exports='+JSON.stringify(localTarget)+';');
  let context,env,provider,crashAt=0,mutations=0,battery=99,free=10000000,encrypted=true,firmware='2v29',health=null,clockMs=1800000000000;
  function mutate(kind,name,fn){fn();log.push({kind,name});mutations++;if(crashAt&&mutations===crashAt){crashAt=0;throw Error('power lost after '+kind+':'+name);}}
@@ -30,14 +30,15 @@ function fixture(mode='factory',selectedPayload=payload){
  }
  boot(false);
  function stageAll(){for(const [i,f]of target.files.entries()){const b=payload[f.name];for(let o=0;o<b.length;o+=384)provider.stage(i,o,b.length,Buffer.from(b.slice(o,o+384),'latin1').toString('base64'));}}
- function prepare(){provider.setConsent(true);provider.prepare(binding,env.checkpointDigest());stageAll();}
+ function approve(){if(authorizationMode!=='app-confirmed')provider.setConsent(true);}
+ function prepare(){approve();provider.prepare(binding,env.checkpointDigest());stageAll();}
  function finish(){
-  let st=provider.status();if(st.phase==='unprepared')prepare();else{provider.recover(binding);provider.setConsent(true);if(!['activating','activation-pending','complete'].includes(st.phase))stageAll();}
+  let st=provider.status();if(st.phase==='unprepared')prepare();else{provider.recover(binding);approve();if(!['activating','activation-pending','complete'].includes(st.phase))stageAll();}
   if(!provider.status().wipeConsumed)provider.beginWipe(target.fingerprint);
   for(let guard=0;['quarantining','wiping','installing'].includes(provider.status().phase);guard++){
-   if(guard>5000)throw Error('loop');if(provider.status().phase==='wiping'&&!env.isolated()){boot(true);provider.recover(binding);provider.setConsent(true);}provider.step();
+   if(guard>5000)throw Error('loop');if(provider.status().phase==='wiping'&&!env.isolated()){boot(true);provider.recover(binding);approve();}provider.step();
   }
-  if(['verified','activating'].includes(provider.status().phase)){provider.setConsent(true);if(provider.status().phase==='verified')provider.syncTime(binding,1800000000000,'11111111-1234-4234-8234-123456789abc');provider.activate();}
+  if(['verified','activating'].includes(provider.status().phase)){approve();if(provider.status().phase==='verified')provider.syncTime(binding,1800000000000,'11111111-1234-4234-8234-123456789abc');provider.activate();}
   if(provider.status().phase==='activation-pending'||provider.status().phase==='complete'){context.global.VeraZeroBootGeneration=binding.generation;context.global.VeraZeroBootExecutionId=binding.executionId;health={running:true,scheduled:true,hrmRequested:true,sampleCount:0};provider.confirm(binding);}
   return provider.status();
  }
@@ -159,3 +160,37 @@ test('the same zero protocol installs a minimal Vera-only target without stock a
  f.bangle.ui.btn();assert.equal(d.status().consentVisible,true);assert.equal(f.p.status().consent,false);
  f.bangle.ui.touch(0,{x:88,y:130});assert.equal(f.p.status().consent,true);assert.equal(d.status().consentVisible,false);
  });
+
+test('app-confirmed initialization finishes with no watch consent and a new intent replaces every previous state',()=>{
+ const f=fixture('factory',undefined,'app-confirmed');f.context.global.VeraZero=f.p;
+ vm.runInContext(fs.readFileSync(path.join(dir,'app.js'),'utf8'),f.context);
+ assert.equal(f.context.global.VeraZeroDisplay.canConsent(),false);
+ assert.equal(f.drawn.includes('CONSENTI'),false);
+ assert.equal(f.p.status().physicalConsentRequired,false);assert.equal(f.p.status().consent,false);
+ assert.equal(f.finish().phase,'complete');assert.equal(f.p.status().consent,false);
+ const next={...binding,executionId:'eeeeeeee-1234-4234-8234-123456789012',generation:'ffffffff-1234-4234-8234-123456789012'};
+ const st=f.p.prepare(next,f.env.checkpointDigest());assert.equal(st.phase,'prepared');assert.equal(st.wipeConsumed,false);
+ assert.equal(st.binding.executionId,next.executionId);
+ f.encrypted=false;assert.throws(()=>f.p.beginWipe(target.fingerprint),/cifrato/);
+});
+
+test('a fresh app intent replaces incomplete or corrupt attempts without user interaction on the watch',()=>{
+ for(const prior of ['prepared','staging','quarantining','wiping','installing','verified','corrupt']){
+  const f=fixture('factory',undefined,'app-confirmed');
+  if(prior==='corrupt'){f.files.set('vz.state0','broken');f.reboot();}
+  else {
+   f.p.prepare(binding,f.env.checkpointDigest());
+   if(prior!=='prepared'){f.stageAll();}
+   if(!['prepared','staging'].includes(prior)){
+    f.p.beginWipe(target.fingerprint);
+    while(f.p.status().phase!==prior){
+     if(f.p.status().phase==='wiping'&&!f.env.isolated()){f.boot(true);f.p.recover(binding);}
+     f.p.step();
+    }
+   }
+  }
+  const next={...binding,executionId:'eeeeeeee-1234-4234-8234-123456789012',generation:'ffffffff-1234-4234-8234-123456789012'};
+  const st=f.p.prepare(next,f.env.checkpointDigest());
+  assert.equal(st.phase,'prepared',prior);assert.equal(st.wipeConsumed,false,prior);assert.equal(st.stagedFiles,0,prior);assert.equal(st.consent,false,prior);
+ }
+});

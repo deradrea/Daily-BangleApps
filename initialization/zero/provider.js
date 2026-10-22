@@ -1,6 +1,6 @@
 /* Zero initialization: new destructive intent, selective wipe, no eraseAll. */
 exports.create=function(e){
-  var state=null,loadError=null,consent=false,upload,stagedVerified=false;
+  var state=null,loadError=null,consent=false,upload,stagedVerified=false,appConfirmed=e.target.authorizationMode==='app-confirmed';
   function fail(s){throw Error(s);}
   function integer(n){return typeof n==='number'&&isFinite(n)&&Math.floor(n)===n;}
   function same(a,b){return e.canonical(a)===e.canonical(b);}
@@ -27,12 +27,12 @@ exports.create=function(e){
   function stageName(i){return 'vz.f'+i;}
   function matches(n,f){var b=e.read(n);return typeof b==='string'&&b.length===f.size&&e.hash(b)===f.sha256;}
   function staged(){if(stagedVerified)return;if(state.staged.length!==e.target.files.length||e.target.files.some(function(f,i){return !matches(stageName(i),f);}))fail('Staging incompleto o corrotto');stagedVerified=true;}
-  function status(){return {protocol:1,binding:state&&state.binding,phase:loadError?'checkpoint-error':state?state.phase:'unprepared',checkpointDigest:e.checkpointDigest(),targetFingerprint:e.target.fingerprint,stagedFiles:state?state.staged.length:0,targetFiles:e.target.files.length,wipeConsumed:!!state&&state.wipeConsumed,removed:state&&state.removed||0,wipeTotal:state&&state.wipeTotal||0,installed:state?(state.installed+(state.bootCommitted?1:0)):0,clockInitialized:!!state&&!!state.clock,consent:consent,isolated:e.isolated(),softwareReady:!!state&&state.phase==='complete',error:loadError};}
+  function status(){return {protocol:1,authorizationMode:appConfirmed?'app-confirmed':'physical-device',physicalConsentRequired:!appConfirmed,binding:state&&state.binding,phase:loadError?'checkpoint-error':state?state.phase:'unprepared',checkpointDigest:e.checkpointDigest(),targetFingerprint:e.target.fingerprint,stagedFiles:state?state.staged.length:0,targetFiles:e.target.files.length,wipeConsumed:!!state&&state.wipeConsumed,removed:state&&state.removed||0,wipeTotal:state&&state.wipeTotal||0,installed:state?(state.installed+(state.bootCommitted?1:0)):0,clockInitialized:!!state&&!!state.clock,consent:consent,isolated:e.isolated(),softwareReady:!!state&&state.phase==='complete',error:loadError};}
   function inspect(){var info=e.inspect();info.checkpointDigest=e.checkpointDigest();info.status=status();return info;}
   function prepare(binding,previousCheckpointDigest){
     secure();if(!valid(binding)||e.mac()!==binding.mac)fail('Identita o binding non validi');
     if(state&&same(state.binding,binding))return status();
-    if(!consent)fail('Conferma attuale sul Bangle necessaria');
+    if(!appConfirmed&&!consent)fail('Conferma attuale sul Bangle necessaria');
     if(previousCheckpointDigest!==e.checkpointDigest())fail('Checkpoint cambiato prima della nuova esecuzione');
     var info=e.inspect();if(!info.compatible)fail('Modello o firmware non supportato');
     if(!integer(info.batteryPercent)||info.batteryPercent<50||info.batteryPercent>100)fail('Carica il Bangle almeno al 50%');
@@ -51,7 +51,7 @@ exports.create=function(e){
     if(upload.next===total){if(!matches(stageName(index),f))fail('Hash staging non corrispondente');state.staged.push(index);if(!state.wipeConsumed)state.phase='staging';save();upload=undefined;}
     var bytes=state.staged.reduce(function(n,i){return n+file(i).size;},0)+(upload?upload.next:0);e.progress('upload',bytes,e.target.stagingBytes);return status();
   }
-  function physical(){bound();if(!consent)fail('Consenso sul display necessario');}
+  function physical(){bound();if(!appConfirmed&&!consent)fail('Consenso sul display necessario');}
   function beginWipe(fingerprint){
     physical();if(fingerprint!==e.target.fingerprint)fail('Target differente');
     if(state.wipeConsumed)return status();
