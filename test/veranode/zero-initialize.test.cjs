@@ -97,7 +97,7 @@ test('boot display includes every stage, heartbeat, touch consent and errors wit
  const f=fixture();const c=f.context;vm.runInContext(fs.readFileSync(path.join(dir,'display.js'),'utf8'),c);const display=c.exports.create();c.global.VeraZeroDisplay=display;
  for(const phase of ['preparing','upload','quarantining','wiping','installing','verified','activating','activation-pending','complete','paused','error'])display.set(phase,1,10,phase==='error'?'Errore verificabile':'');
  assert.equal(f.intervals.length,1);f.intervals[0]();assert.ok(f.drawn.includes('Formatta contenuti'));assert.ok(f.drawn.includes('Errore verificabile'));assert.ok(f.drawn.includes('Collegamento perso'));
- c.global.VeraZeroRecovery=true;vm.runInContext(fs.readFileSync(path.join(dir,'app.js'),'utf8'),c);assert.ok(f.bangle.ui);f.bangle.ui.btn();f.bangle.ui.touch(0,{y:160});assert.equal(c.global.VeraZero.status().consent,true);
+ c.global.VeraZeroRecovery=true;vm.runInContext(fs.readFileSync(path.join(dir,'app.js'),'utf8'),c);assert.ok(f.bangle.ui);f.bangle.ui.btn();f.bangle.ui.touch(0,{x:88,y:160});assert.equal(c.global.VeraZero.status().consent,true);
 });
 
 test('confirmation cannot claim physical sensor samples, and refuses a stopped collector',()=>{
@@ -122,7 +122,7 @@ test('factory consent is mounted before prepare and survives the side button wit
  vm.runInContext(fs.readFileSync(path.join(dir,'app.js'),'utf8'),f.context);
  assert.ok(f.bangle.ui);assert.equal(f.p.status().phase,'unprepared');
  f.bangle.ui.btn();assert.equal(f.p.status().consent,false);
- f.bangle.ui.touch(0,{y:160});assert.equal(f.p.status().consent,true);
+ f.bangle.ui.touch(0,{x:88,y:160});assert.equal(f.p.status().consent,true);
  f.bangle.ui.btn();assert.equal(f.p.status().consent,true);
 });
 test('the actual cold boot guard stamps the completed generation, and never stamps staging',()=>{
@@ -147,3 +147,15 @@ test('the same zero protocol installs a minimal Vera-only target without stock a
  assert.equal(f.files.has('setting.app.js'),false);assert.equal(f.files.has('launch.info'),false);assert.equal(f.sf.size,0);
  assert.equal(f.files.get('launch.app.js'),data['launch.app.js']);assert.equal(f.files.get('veranode.app.js'),data['veranode.app.js']);
 });
+
+ test('consent uses a dedicated screen and a large matching touch target, replacing stale feedback',()=>{
+ const f=fixture();f.context.global.VeraZero=f.p;let disposed=false;
+ f.context.global.VeraZeroDisplay={dispose:()=>{disposed=true;},enableConsent:()=>{},setConsent:()=>{},set:()=>{},draw:()=>{}};
+ vm.runInContext(fs.readFileSync(path.join(dir,'app.js'),'utf8'),f.context);
+ const d=f.context.global.VeraZeroDisplay;assert.equal(disposed,true);assert.equal(d.status().consentVisible,true);
+ assert.ok(f.drawn.includes('Conferma richiesta'));assert.ok(f.drawn.includes('CONSENTI'));
+ f.bangle.ui.touch(0,{x:88,y:80});assert.equal(f.p.status().consent,false);
+ f.bangle.ui.touch(0,{x:0,y:150});assert.equal(f.p.status().consent,false);
+ f.bangle.ui.btn();assert.equal(d.status().consentVisible,true);assert.equal(f.p.status().consent,false);
+ f.bangle.ui.touch(0,{x:88,y:130});assert.equal(f.p.status().consent,true);assert.equal(d.status().consentVisible,false);
+ });
