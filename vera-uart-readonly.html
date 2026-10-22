@@ -1,50 +1,13 @@
 <!doctype html>
 <html lang="it">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Vera - Lettura UART ufficiale</title>
-<style>
-body{margin:32px auto;padding:0 20px;max-width:900px;font:16px/1.5 system-ui,sans-serif;color:#242424;background:#fff}h1{font-size:26px}button{min-height:44px;padding:10px 18px;border:1px solid #9c7d19;border-radius:4px;background:#ffce37;color:#202020;font:inherit}button:disabled{opacity:.5}pre{padding:16px;border:1px solid #ccd2da;white-space:pre-wrap;overflow-wrap:anywhere}dt{color:#626873}dd{margin:0 0 16px}a{color:#725600}
-</style>
-<h1>Lettura UART ufficiale</h1>
-<dl><dt>Dispositivo atteso</dt><dd>FC:0C:5D:40:F0:AA</dd>
-<dt>Libreria</dt><dd>Espruino UART 1.26 originale, commit 5039521694bb53d05693b1889a930eab07bd44eb</dd></dl>
-<p><a href="https://www.espruino.com/UART.js">Documentazione Espruino UART</a></p>
-<button id="read" type="button" disabled>Leggi MAC e firmware</button>
-<p id="status" role="status">Caricamento della libreria ufficiale. Nessun collegamento avviato.</p>
-<pre id="report">Nessuna lettura eseguita.</pre>
+</head>
+<body>
+<p>Preparazione della lettura MAC e firmware. Nessun collegamento automatico.</p>
 <script src="webtools/uart.js"></script>
-<script>
-const button = document.getElementById('read');
-const status = document.getElementById('status');
-const report = document.getElementById('report');
-const expression = '({mac:NRF.getAddress().split(" ")[0].toUpperCase(),firmware:process.env.VERSION})';
-if (window.UART?.version === '1.26' && navigator.bluetooth && isSecureContext) {
-  UART.ports = ['Web Bluetooth'];
-  UART.debug = 2;
-  button.disabled = false;
-  status.textContent = 'Pronto. Nessun collegamento avviato.';
-} else status.textContent = 'UART ufficiale o Bluetooth Web non disponibile.';
-button.addEventListener('click', async () => {
-  button.disabled = true;
-  const started = performance.now();
-  const outcome = {startedAt:new Date().toISOString(), api:'UART.eval', expectedMac:'FC:0C:5D:40:F0:AA', expression};
-  status.textContent = 'Scelta Bluetooth e apertura UART. Nessuna installazione o cancellazione.';
-  try {
-    const value = await UART.eval(expression);
-    outcome.identity = value;
-    if (value?.mac !== outcome.expectedMac || typeof value.firmware !== 'string') throw Error('Identita non corrispondente al Bangle atteso. Nessuna ulteriore operazione.');
-    outcome.success = true;
-    status.textContent = 'MAC e firmware letti. Collegamento chiuso.';
-  } catch (error) {
-    outcome.success = false;
-    outcome.error = {name:error?.name || 'Error',message:error?.message || String(error)};
-    status.textContent = 'Lettura non riuscita. Nessun nuovo tentativo automatico.';
-  } finally {
-    UART.close();
-    outcome.elapsedMs = Math.round(performance.now()-started);
-    report.textContent = JSON.stringify(outcome,null,2);
-  }
-});
-</script>
+<script src="vera-apploader-readonly.js"></script>
+</body>
 </html>
