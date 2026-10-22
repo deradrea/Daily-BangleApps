@@ -7,16 +7,20 @@
   panel.style.cssText = 'position:fixed;inset:0;z-index:2147483647;overflow:auto;background:white;color:#242424;padding:24px;font:16px/1.5 system-ui,sans-serif';
   panel.innerHTML = '<h1>' + (minimal ? 'UART ufficiale' : 'App Loader') + ' · Lettura F0:AA</h1><p>Dispositivo atteso: FC:0C:5D:40:F0:AA. Una sola lettura di MAC e firmware tramite ' + api + '.</p><button type="button" disabled style="min-height:44px;padding:10px 18px">Leggi MAC e firmware</button><p role="status">Preparazione diagnostica. Nessun collegamento avviato.</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>';
   document.body.appendChild(panel);
+  for (const sibling of Array.from(document.body.children || [])) {
+    if (sibling !== panel) sibling.inert = true;
+  }
   // Prevent access to ordinary install/reset/time actions while this mode is open.
   document.addEventListener('click', event => {
     if (!panel.contains(event.target)) { event.preventDefault(); event.stopImmediatePropagation(); }
   }, true);
   const button = panel.querySelector('button'), status = panel.querySelector('[role=status]'), output = panel.querySelector('pre');
-  const report = { mode: minimal ? 'minimal-uart-readonly' : 'apploader-comms-readonly', api, expectedMac: 'FC:0C:5D:40:F0:AA', connectionStarted: false, events: [] };
+  const report = { mode: minimal ? 'minimal-uart-readonly' : 'apploader-comms-readonly', api, expectedMac: 'FC:0C:5D:40:F0:AA', connectionStarted: false,
+    txWriteCalls: 0, txBytes: 0, disconnectCalls: 0, events: [] };
   const started = performance.now(); let sequence = 0, attempted = false;
   const render = () => { output.textContent = JSON.stringify(report, null, 2); };
   const record = (event, detail = {}) => {
-    report.events.push({ sequence: ++sequence, elapsedMs: Math.round(performance.now() - started), event, ...detail });
+    report.events.push({ sequence: ++sequence, utc: new Date().toISOString(), elapsedMs: Math.round(performance.now() - started), event, ...detail });
     if (report.events.length > 200) report.events.shift();
     render();
   };
@@ -30,8 +34,12 @@
     const original = prototype?.[method];
     if (typeof original !== 'function') throw Error('API diagnostica non disponibile: ' + label);
     prototype[method] = function(...args) {
+      const write = label.startsWith('gatt.writeValue'), bytes = write ? args[0]?.byteLength : undefined;
+      if (write) { report.txWriteCalls++; report.txBytes += Number.isFinite(bytes) ? bytes : 0; }
+      if (label === 'gatt.disconnect') report.disconnectCalls++;
       record(label + '.called', { stack: new Error().stack, connected: typeof this.connected === 'boolean' ? this.connected : undefined,
-        uuid: ['gatt.getPrimaryService', 'gatt.getCharacteristic'].includes(label) ? args[0] : undefined });
+        uuid: ['gatt.getPrimaryService', 'gatt.getCharacteristic'].includes(label) ? args[0] : undefined, byteLength: bytes,
+        afterGattDisconnectEvent: label === 'gatt.disconnect' ? report.events.some(event => event.event === 'gattserverdisconnected') : undefined });
       let result;
       try { result = Reflect.apply(original, this, args); }
       catch (error) { record(label + '.threw', { name: error.name }); throw error; }
@@ -54,6 +62,9 @@
     wrap(prototype, 'disconnect', 'gatt.disconnect');
     wrap(BluetoothRemoteGATTService.prototype, 'getCharacteristic', 'gatt.getCharacteristic');
     wrap(BluetoothRemoteGATTCharacteristic.prototype, 'startNotifications', 'gatt.startNotifications');
+    for (const method of ['writeValue', 'writeValueWithResponse', 'writeValueWithoutResponse']) {
+      if (typeof BluetoothRemoteGATTCharacteristic.prototype[method] === 'function') wrap(BluetoothRemoteGATTCharacteristic.prototype, method, 'gatt.' + method);
+    }
     button.disabled = false;
     status.textContent = 'Pronto. Nessun collegamento avviato. Il resto dell’App Loader e bloccato in questa modalita.';
   } catch (error) { status.textContent = error.message; }
