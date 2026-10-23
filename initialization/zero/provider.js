@@ -15,6 +15,7 @@ exports.create=function(e){
     if(!st||!valid(st.binding)||st.protocol!==1||st.targetFingerprint!==e.target.fingerprint||!phases.includes(st.phase)||!Array.isArray(st.staged))return false;
     if(st.staged.some(function(n,i,a){return !integer(n)||n<0||n>=e.target.files.length||a.indexOf(n)!==i;}))return false;
     if(typeof st.wipeConsumed!=='boolean'||typeof st.bootCommitted!=='boolean')return false;
+    if(st.upload&&(!integer(st.upload.index)||st.upload.index<0||st.upload.index>=e.target.files.length||!integer(st.upload.next)||st.upload.next<=0||st.upload.next>=e.target.files[st.upload.index].size||st.staged.includes(st.upload.index)))return false;
     var limits={removed:9007199254740991,wipeTotal:9007199254740991,installed:e.target.files.length-1,armed:e.bootEntries.length,activation:e.cleanupBootEntries.length};
     if(Object.keys(limits).some(function(k){return !integer(st[k])||st[k]<0||st[k]>limits[k];}))return false;
     if(st.pending&&(!['boot','normal','storage-chunk','install','activation'].includes(st.pending.kind)||typeof st.pending.name!=='string'))return false;
@@ -31,7 +32,7 @@ exports.create=function(e){
   function stageName(i){return 'vz.f'+i;}
   function matches(n,f){var b=e.read(n);return typeof b==='string'&&b.length===f.size&&e.hash(b)===f.sha256;}
   function staged(){if(stagedVerified)return;if(state.staged.length!==e.target.files.length||e.target.files.some(function(f,i){return !matches(stageName(i),f);}))fail('Staging incompleto o corrotto');stagedVerified=true;}
-  function status(){return {protocol:1,authorizationMode:appConfirmed?'app-confirmed':'physical-device',physicalConsentRequired:!appConfirmed,binding:state&&state.binding,phase:loadError?'checkpoint-error':state?state.phase:'unprepared',checkpointDigest:e.checkpointDigest(),targetFingerprint:e.target.fingerprint,stagedFiles:state?state.staged.length:0,targetFiles:e.target.files.length,wipeConsumed:!!state&&state.wipeConsumed,removed:state&&state.removed||0,wipeTotal:state&&state.wipeTotal||0,installed:state?(state.installed+(state.bootCommitted?1:0)):0,clockInitialized:!!state&&!!state.clock,consent:consent,isolated:e.isolated(),softwareReady:!!state&&state.phase==='complete',error:loadError};}
+  function status(){return {protocol:1,stagingResume:'verified-prefix-v1',authorizationMode:appConfirmed?'app-confirmed':'physical-device',physicalConsentRequired:!appConfirmed,binding:state&&state.binding,phase:loadError?'checkpoint-error':state?state.phase:'unprepared',checkpointDigest:e.checkpointDigest(),targetFingerprint:e.target.fingerprint,stagedFiles:state?state.staged.length:0,targetFiles:e.target.files.length,wipeConsumed:!!state&&state.wipeConsumed,removed:state&&state.removed||0,wipeTotal:state&&state.wipeTotal||0,installed:state?(state.installed+(state.bootCommitted?1:0)):0,clockInitialized:!!state&&!!state.clock,consent:consent,isolated:e.isolated(),softwareReady:!!state&&state.phase==='complete',error:loadError};}
   function inspect(){var info=e.inspect();info.checkpointDigest=e.checkpointDigest();info.status=status();return info;}
   function prepare(binding,previousCheckpointDigest){
     secure();if(!valid(binding)||e.mac()!==binding.mac)fail('Identita o binding non validi');
@@ -44,17 +45,28 @@ exports.create=function(e){
     state={protocol:1,binding:binding,targetFingerprint:e.target.fingerprint,phase:'prepared',staged:[],wipeConsumed:false,removed:0,wipeTotal:0,installed:0,bootCommitted:false,armed:0,activation:0,pending:null};
     e.replace(state,previousCheckpointDigest);e.invalidateBoot();loadError=null;upload=undefined;stagedVerified=false;paint();return status();
   }
-  function recover(binding){bound();if(!same(binding,state.binding))fail('Ripresa di un altra esecuzione');consent=false;e.consentChanged(false);upload=undefined;stagedVerified=false;paint();return status();}
+  function recover(binding){bound();if(!same(binding,state.binding))fail('Ripresa di un altra esecuzione');consent=false;e.consentChanged(false);upload=state.upload?{index:state.upload.index,next:state.upload.next}:undefined;stagedVerified=false;paint();return status();}
+  function stagingProgress(index){
+    bound();if(!['prepared','staging'].includes(state.phase)||state.wipeConsumed)fail('Ripresa caricamento non prevista');
+    var f=file(index),verified=state.staged.includes(index)&&matches(stageName(index),f),b=e.read(stageName(index)),offset=verified?f.size:state.upload&&state.upload.index===index?state.upload.next:0;
+    if(offset&&(!b||b.length<offset))fail('Blocco persistente non leggibile');
+    return {binding:state.binding,targetFingerprint:e.target.fingerprint,index:index,verified:verified,offset:offset,prefixSha256:e.hash(offset?b.slice(0,offset):'')};
+  }
   function stage(index,offset,total,base64){
     bound();if(['activating','activation-pending','complete'].includes(state.phase))fail('Caricamento non previsto');
     var f=file(index),raw=e.unbase64(base64);if(!integer(offset)||offset<0||total!==f.size||!raw.length||raw.length>384||offset+raw.length>total)fail('Blocco non valido');
     if(state.staged.includes(index)){if(matches(stageName(index),f))return status();if(offset!==0)fail('Ripeti il file corrotto da zero');state.staged=state.staged.filter(function(n){return n!==index;});save();}stagedVerified=false;
+    if(!upload&&state.upload)upload={index:state.upload.index,next:state.upload.next};
+    if(upload&&upload.index===index&&offset<upload.next){var prior=e.read(stageName(index));if(offset+raw.length<=upload.next&&prior&&prior.slice(offset,offset+raw.length)===raw)return status();fail('Blocco ripetuto non corrispondente');}
     if(offset===0){upload={index:index,next:0};}
     if(!upload||upload.index!==index||upload.next!==offset)fail('Ordine blocchi non valido');
     // Native Storage treats offset zero as a new file. Allocate and write the
     // first block together, otherwise that block truncates the reserved file.
     e.write(stageName(index),raw,offset,offset===0?total:undefined);upload.next+=raw.length;
-    if(upload.next===total){if(!matches(stageName(index),f))fail('Hash staging non corrispondente');state.staged.push(index);if(!state.wipeConsumed)state.phase='staging';save();upload=undefined;}
+    if(upload.next===total){if(!matches(stageName(index),f))fail('Hash staging non corrispondente');state.staged.push(index);upload=undefined;}
+    // Persist only acknowledged progress, after writing bytes. If power is lost
+    // between the two, the old offset is safe to repeat with identical bytes.
+    state.upload=upload?{index:upload.index,next:upload.next}:null;if(!state.wipeConsumed)state.phase='staging';save();
     var bytes=state.staged.reduce(function(n,i){return n+file(i).size;},0)+(upload?upload.next:0);e.progress('upload',bytes,e.target.stagingBytes);return status();
   }
   function physical(){bound();if(!appConfirmed&&!consent)fail('Consenso sul display necessario');}
@@ -118,6 +130,6 @@ exports.create=function(e){
     verify();state.phase='complete';save();e.cleanup();paint();return {softwareReady:true,clockVerified:false,sensorSamplesVerified:false,collectionRunning:true,binding:state.binding,clockUtcMs:e.clockUtcMs(),runtimePackageSha256:e.target.runtimePackageSha256,health:h};
   }
   function inventoryPage(offset,limit){bound();if(!integer(offset)||!integer(limit)||offset<0||limit<1||limit>24)fail('Pagina non valida');var rows=e.inventory();return {offset:offset,total:rows.length,next:Math.min(rows.length,offset+limit),files:rows.slice(offset,offset+limit)};}
-  var api={protocol:1,status:status,inspect:inspect,requestSecurity:e.requestSecurity,securityStatus:e.securityStatus,setConsent:function(on){consent=on===true;e.consentChanged(consent);paint();},prepare:prepare,recover:recover,stage:stage,beginWipe:beginWipe,step:step,verify:verify,syncTime:syncTime,activate:activate,confirm:confirm,inventoryPage:inventoryPage};
+  var api={protocol:1,status:status,inspect:inspect,requestSecurity:e.requestSecurity,securityStatus:e.securityStatus,setConsent:function(on){consent=on===true;e.consentChanged(consent);paint();},prepare:prepare,recover:recover,stagingProgress:stagingProgress,stage:stage,beginWipe:beginWipe,step:step,verify:verify,syncTime:syncTime,activate:activate,confirm:confirm,inventoryPage:inventoryPage};
   Object.keys(api).forEach(function(k){if(typeof api[k]==='function'){var fn=api[k];api[k]=function(){try{return fn.apply(null,arguments);}catch(err){e.progress('error',0,0,String(err));throw err;}};}});return api;
 };

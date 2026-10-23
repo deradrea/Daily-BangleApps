@@ -5,14 +5,27 @@ const parent=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize
 const payload=Object.fromEntries(parent.target.files.map(f=>[f.name,f.name==='setting.json'?'{"clock":"veranode.app.js","clockHasWidgets":false}':'new:'+f.name]));
 const target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
 const binding={executionId:'12345678-1234-4234-8234-123456789abc',generation:'abcdef12-1234-4234-8234-123456789abc',deviceId:97,mac:'D1:4D:6D:D2:E0:75',board:'BANGLEJS2',firmware:'2v29',packageSha256:'a'.repeat(64),intent:'initialize-from-zero'};
-test('staging allocates its full size with the first block and can restart a partial file',()=>{
+test('staging resumes a verified prefix after reboot without rewriting acknowledged bytes',()=>{
  const contents={...payload,'.bootcde':'x'.repeat(1304)},f=fixture('factory',contents,'app-confirmed');
  f.p.prepare(binding,f.env.checkpointDigest());const index=Object.keys(contents).indexOf('.bootcde'),bytes=contents['.bootcde'];
  const first=Buffer.from(bytes.slice(0,384)).toString('base64');
  f.p.stage(index,0,bytes.length,first);assert.equal(f.files.get('vz.f'+index).length,1304);
- f.reboot();assert.throws(()=>f.p.stage(index,384,bytes.length,first),/Ordine/);
- for(let offset=0;offset<bytes.length;offset+=384)f.p.stage(index,offset,bytes.length,Buffer.from(bytes.slice(offset,offset+384)).toString('base64'));
+ f.reboot();f.p.recover(binding);const progress=f.p.stagingProgress(index);assert.equal(progress.offset,384);assert.equal(progress.prefixSha256,hash(bytes.slice(0,384)));assert.equal(progress.verified,false);
+ const mutations=f.mutations;f.p.stage(index,0,bytes.length,first);assert.equal(f.mutations,mutations,'lost ACK replay is read-only');
+ assert.throws(()=>f.p.stage(index,0,bytes.length,Buffer.from('wrong').toString('base64')),/non corrispondente/);
+ for(let offset=progress.offset;offset<bytes.length;offset+=384)f.p.stage(index,offset,bytes.length,Buffer.from(bytes.slice(offset,offset+384)).toString('base64'));
  assert.equal(f.files.get('vz.f'+index),bytes);assert.equal(f.p.status().stagedFiles,1);assert.equal(f.p.status().wipeConsumed,false);
+ assert.equal(f.p.stagingProgress(index).verified,true);
+});
+test('staging power loss before or after checkpoint returns only a verified reusable prefix',()=>{
+ for(const cut of [1,2]){
+  const contents={...payload,'.bootcde':'a'.repeat(384)+'b'.repeat(384)+'c'.repeat(536)},f=fixture('factory',contents,'app-confirmed'),index=Object.keys(contents).indexOf('.bootcde'),bytes=contents['.bootcde'];
+  f.p.prepare(binding,f.env.checkpointDigest());f.p.stage(index,0,bytes.length,Buffer.from(bytes.slice(0,384)).toString('base64'));
+  f.crash=cut;assert.throws(()=>f.p.stage(index,384,bytes.length,Buffer.from(bytes.slice(384,768)).toString('base64')),/power lost/);
+  f.reboot();f.p.recover(binding);const progress=f.p.stagingProgress(index);assert.equal(progress.offset,cut===1?384:768);assert.equal(progress.prefixSha256,hash(bytes.slice(0,progress.offset)));
+  for(let offset=progress.offset;offset<bytes.length;offset+=384)f.p.stage(index,offset,bytes.length,Buffer.from(bytes.slice(offset,offset+384)).toString('base64'));
+  assert.equal(f.files.get('vz.f'+index),bytes);assert.equal(f.p.status().wipeConsumed,false);
+ }
 });
 function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  const payload=selectedPayload,target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));

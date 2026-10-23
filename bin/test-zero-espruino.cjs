@@ -62,8 +62,15 @@ async function main(){
     if(nativeStaging&&i===1&&offset===0){
      assert.equal(value('require("Storage").read("vz.f1").length'),data.length);
      value('global.testZeroProvider=require("vz.provider.js").create(testZeroEnv)');
-     assert.match(rpc('testZeroProvider.stage(1,384,'+data.length+','+JSON.stringify(data.subarray(384,768).toString('base64'))+')').error,/Ordine/);
-     value(expression);
+     if(providerSource.includes('function stagingProgress(')){
+      value('testZeroProvider.recover('+JSON.stringify(binding)+')');
+      const saved=value('testZeroProvider.stagingProgress(1)');assert.equal(saved.offset,384);assert.equal(saved.prefixSha256,sha(data.subarray(0,384)));assert.equal(saved.verified,false);
+      value(expression); // Same acknowledged block is an idempotent replay.
+      value('testZeroProvider.stage(1,384,'+data.length+','+JSON.stringify(data.subarray(384,768).toString('base64'))+')');
+     }else{
+      assert.match(rpc('testZeroProvider.stage(1,384,'+data.length+','+JSON.stringify(data.subarray(384,768).toString('base64'))+')').error,/Ordine/);
+      value(expression);
+     }
     }
    }
    if(legacyStagingFailure)break;
