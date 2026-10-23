@@ -73,7 +73,8 @@ async function main(){
    const checks=value('(function(){var e=testZeroEnv;return e.target.files.map(function(f,i){var b=e.read("vz.f"+i);return b.length===f.size&&e.hash(b)===f.sha256;});})()');assert.deepEqual(checks,Array(14).fill(true));
    // Native Storage, hashing, selective wipe/install and journal; radio/load and
    // collector health are substituted, so this is not a physical boot test.
-   value('(function(){testZeroEnv.enter=function(){global.VeraZeroRecovery=true;};testZeroEnv.activate=function(){};testZeroEnv.health=function(){return {running:true,scheduled:true,hrmRequested:true};};return true;})()');
+   // EMSCRIPTEN2 reads the host clock: its setTime does not change getTime.
+   value('(function(){testZeroEnv.enter=function(){global.VeraZeroRecovery=true;};testZeroEnv.activate=function(){};testZeroEnv.setClock=function(ms){global.testZeroUtcMs=ms;return ms;};testZeroEnv.clockUtcMs=function(){return global.testZeroUtcMs;};testZeroEnv.health=function(){return {running:true,scheduled:true,hrmRequested:true};};return true;})()');
    value('testZeroProvider.beginWipe('+JSON.stringify(pkg.target.fingerprint)+')');
    let state=value('testZeroProvider.status()'),steps=0;
    while(['quarantining','wiping','installing'].includes(state.phase)){assert.ok(++steps<1000);state=value('testZeroProvider.step()');}
