@@ -4,8 +4,12 @@ exports.create=function(e){
   function fail(s){throw Error(s);}
   function integer(n){return typeof n==='number'&&isFinite(n)&&Math.floor(n)===n;}
   function same(a,b){return e.canonical(a)===e.canonical(b);}
-  function uuid(s){return typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(s);}
-  function valid(b){var keys=['executionId','generation','deviceId','mac','board','firmware','packageSha256','intent'];return b&&Object.keys(b).length===keys.length&&Object.keys(b).every(function(k){return keys.includes(k);})&&uuid(b.executionId)&&uuid(b.generation)&&integer(b.deviceId)&&b.deviceId>0&&b.deviceId<=9007199254740991&&typeof b.mac==='string'&&/^([A-F0-9]{2}:){5}[A-F0-9]{2}$/.test(b.mac)&&b.board==='BANGLEJS2'&&b.firmware==='2v29'&&b.intent==='initialize-from-zero'&&typeof b.packageSha256==='string'&&/^[a-f0-9]{64}$/.test(b.packageSha256);}
+  // Espruino 2v29 does not implement counted regexp repetitions ({n}).
+  // Check exact lengths separately; retain the complete binding validation.
+  function hex(s,n,upper){return typeof s==='string'&&s.length===n&&!(upper?/[^A-F0-9]/:/[^a-f0-9]/).test(s);}
+  function uuid(s){if(typeof s!=='string')return false;var p=s.split('-'),sizes=[8,4,4,4,12];return p.length===5&&p.every(function(v,i){return hex(v,sizes[i],false);});}
+  function mac(s){if(typeof s!=='string')return false;var p=s.split(':');return p.length===6&&p.every(function(v){return hex(v,2,true);});}
+  function valid(b){var keys=['executionId','generation','deviceId','mac','board','firmware','packageSha256','intent'];return b&&Object.keys(b).length===keys.length&&Object.keys(b).every(function(k){return keys.includes(k);})&&uuid(b.executionId)&&uuid(b.generation)&&integer(b.deviceId)&&b.deviceId>0&&b.deviceId<=9007199254740991&&mac(b.mac)&&b.board==='BANGLEJS2'&&b.firmware==='2v29'&&b.intent==='initialize-from-zero'&&hex(b.packageSha256,64,false);}
   function validState(st){
     var phases=['prepared','staging','quarantining','wiping','installing','verified','activating','activation-pending','complete'];
     if(!st||!valid(st.binding)||st.protocol!==1||st.targetFingerprint!==e.target.fingerprint||!phases.includes(st.phase)||!Array.isArray(st.staged))return false;
