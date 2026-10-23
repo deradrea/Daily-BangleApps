@@ -5,6 +5,15 @@ const parent=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize
 const payload=Object.fromEntries(parent.target.files.map(f=>[f.name,f.name==='setting.json'?'{"clock":"veranode.app.js","clockHasWidgets":false}':'new:'+f.name]));
 const target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
 const binding={executionId:'12345678-1234-4234-8234-123456789abc',generation:'abcdef12-1234-4234-8234-123456789abc',deviceId:97,mac:'D1:4D:6D:D2:E0:75',board:'BANGLEJS2',firmware:'2v29',packageSha256:'a'.repeat(64),intent:'initialize-from-zero'};
+test('staging allocates its full size with the first block and can restart a partial file',()=>{
+ const contents={...payload,'.bootcde':'x'.repeat(1304)},f=fixture('factory',contents,'app-confirmed');
+ f.p.prepare(binding,f.env.checkpointDigest());const index=Object.keys(contents).indexOf('.bootcde'),bytes=contents['.bootcde'];
+ const first=Buffer.from(bytes.slice(0,384)).toString('base64');
+ f.p.stage(index,0,bytes.length,first);assert.equal(f.files.get('vz.f'+index).length,1304);
+ f.reboot();assert.throws(()=>f.p.stage(index,384,bytes.length,first),/Ordine/);
+ for(let offset=0;offset<bytes.length;offset+=384)f.p.stage(index,offset,bytes.length,Buffer.from(bytes.slice(offset,offset+384)).toString('base64'));
+ assert.equal(f.files.get('vz.f'+index),bytes);assert.equal(f.p.status().stagedFiles,1);assert.equal(f.p.status().wipeConsumed,false);
+});
 function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  const payload=selectedPayload,target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
  const files=new Map([['.boot0','old boot'],['.bootcde','unknown loader'],['.boot1','alternate'],['.varimg','old image'],['bootupdate.js','old update'],['foreign.app.js','old app'],['setting.json','old settings']]),sf=new Map(),sfChunks=new Map(),log=[],feedback=[],timers=[],intervals=[],drawn=[];
@@ -16,7 +25,7 @@ function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  files.set('vz.target.js','exports='+JSON.stringify(localTarget)+';');
  let context,env,provider,crashAt=0,mutations=0,battery=99,free=10000000,encrypted=true,firmware='2v29',health=null,clockMs=1800000000000;
  function mutate(kind,name,fn){fn();log.push({kind,name});mutations++;if(crashAt&&mutations===crashAt){crashAt=0;throw Error('power lost after '+kind+':'+name);}}
- const storage={read:(n,o,l)=>{const b=files.get(n);return b===undefined?b:o===undefined?b:b.substr(o,l);},write:(n,b,o,size)=>{mutate('write',n,()=>{if(size!==undefined)files.set(n,'\xff'.repeat(size));if(o===undefined)files.set(n,b);else{const old=files.get(n)||'';files.set(n,old.slice(0,o)+b+old.slice(o+b.length));}});return true;},erase:n=>{if(sfChunks.has(n))mutate('erase-chunk',n,()=>sfChunks.delete(n));else if(n.endsWith('\x01')&&sf.has(n.slice(0,-1)))mutate('erase-sf',n.slice(0,-1),()=>sf.delete(n.slice(0,-1)));else mutate('erase',n,()=>files.delete(n));},
+ const storage={read:(n,o,l)=>{const b=files.get(n);return b===undefined?b:o===undefined?b:b.substr(o,l);},write:(n,b,o,size)=>{mutate('write',n,()=>{if(size!==undefined)files.set(n,'\xff'.repeat(size));if(o===undefined||(o===0&&size===undefined))files.set(n,b);else{const old=files.get(n)||'';if(o+b.length>old.length)throw Error('Too much data for file size');files.set(n,old.slice(0,o)+b+old.slice(o+b.length));}});return true;},erase:n=>{if(sfChunks.has(n))mutate('erase-chunk',n,()=>sfChunks.delete(n));else if(n.endsWith('\x01')&&sf.has(n.slice(0,-1)))mutate('erase-sf',n.slice(0,-1),()=>sf.delete(n.slice(0,-1)));else mutate('erase',n,()=>files.delete(n));},
   list:(_regex,opts)=>opts&&opts.sf?[...sf.keys()].map(n=>n+'\x01').concat([...sfChunks.keys()]):[...files.keys()],getStats:()=>({freeBytes:free}),
   open:(n,_mode)=>({read:()=>{throw Error('old StorageFile content must not be loaded');},erase:()=>mutate('erase-sf',n,()=>sf.delete(n))})};
  const graphics={getWidth:()=>176};for(const n of ['reset','setBgColor','clear','setFontAlign','setColor','setFont','fillCircle','fillRect','flip'])graphics[n]=()=>graphics;

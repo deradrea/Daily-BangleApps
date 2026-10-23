@@ -44,11 +44,45 @@ async function main(){
  value('(function(){var e=require("vz.platform.js").create();e.encrypted=function(){return true;};e.mac=function(){return '+JSON.stringify(binding.mac)+';};e.inspect=function(){return {compatible:true,batteryPercent:80,freeBytes:10000000};};global.testZeroEnv=e;global.testZeroProvider=require("vz.provider.js").create(e);return true;})()');
  const rejected=value('(function(){var b='+JSON.stringify(binding)+',bad='+JSON.stringify(invalid)+',digest=testZeroEnv.checkpointDigest();return bad.map(function(patch){var v=JSON.parse(JSON.stringify(b));Object.keys(patch).forEach(function(k){v[k]=patch[k];});var rejected=false;try{testZeroProvider.prepare(v,digest);}catch(err){rejected=true;}return rejected&&testZeroEnv.checkpointDigest()===digest;});})()');
  assert.deepEqual(rejected,invalid.map(()=>true),'invalid binding must not write a checkpoint');
- const nativeBinding=Buffer.from(pkg.bootstrap.find(f=>f.name==='vz.provider.js').base64,'base64').toString().includes('function hex(s,n,upper)');
+ const providerSource=Buffer.from(pkg.bootstrap.find(f=>f.name==='vz.provider.js').base64,'base64').toString();
+ const nativeBinding=providerSource.includes('function hex(s,n,upper)'),nativeStaging=providerSource.includes('offset===0?total:undefined');
+ let fullProtocol=false;
  if(nativeBinding){
   const prepared=value('testZeroProvider.prepare('+JSON.stringify(binding)+',testZeroEnv.checkpointDigest())');assert.equal(prepared.phase,'prepared');assert.deepEqual(prepared.binding,binding);assert.equal(prepared.wipeConsumed,false);
   const reloaded=value('require("vz.provider.js").create(testZeroEnv).status()');assert.equal(reloaded.phase,'prepared');assert.deepEqual(reloaded.binding,binding);assert.equal(reloaded.error,null);
   const replay=value('testZeroProvider.prepare('+JSON.stringify(binding)+',testZeroEnv.checkpointDigest())');assert.deepEqual(replay,prepared);
+  assert.equal(value('require("Storage").read("old.data")'),'preserve');
+  let legacyStagingFailure=false;
+  for(let i=0;i<pkg.target.files.length;i++){
+   const file=pkg.target.files[i],data=Buffer.from(file.base64,'base64');
+   for(let offset=0;offset<data.length;offset+=384){
+    const expression='testZeroProvider.stage('+i+','+offset+','+data.length+','+JSON.stringify(data.subarray(offset,offset+384).toString('base64'))+')';
+    if(!nativeStaging&&i===1&&offset===384){assert.match(rpc(expression).error,/Too much data for file size/);legacyStagingFailure=true;break;}
+    value(expression);
+    if(nativeStaging&&i===1&&offset===0){
+     assert.equal(value('require("Storage").read("vz.f1").length'),data.length);
+     value('global.testZeroProvider=require("vz.provider.js").create(testZeroEnv)');
+     assert.match(rpc('testZeroProvider.stage(1,384,'+data.length+','+JSON.stringify(data.subarray(384,768).toString('base64'))+')').error,/Ordine/);
+     value(expression);
+    }
+   }
+   if(legacyStagingFailure)break;
+  }
+  if(nativeStaging){
+   assert.equal(value('testZeroProvider.status().stagedFiles'),14);
+   const checks=value('(function(){var e=testZeroEnv;return e.target.files.map(function(f,i){var b=e.read("vz.f"+i);return b.length===f.size&&e.hash(b)===f.sha256;});})()');assert.deepEqual(checks,Array(14).fill(true));
+   // Native Storage, hashing, selective wipe/install and journal; radio/load and
+   // collector health are substituted, so this is not a physical boot test.
+   value('(function(){testZeroEnv.enter=function(){global.VeraZeroRecovery=true;};testZeroEnv.activate=function(){};testZeroEnv.health=function(){return {running:true,scheduled:true,hrmRequested:true};};return true;})()');
+   value('testZeroProvider.beginWipe('+JSON.stringify(pkg.target.fingerprint)+')');
+   let state=value('testZeroProvider.status()'),steps=0;
+   while(['quarantining','wiping','installing'].includes(state.phase)){assert.ok(++steps<1000);state=value('testZeroProvider.step()');}
+   assert.equal(state.phase,'verified');assert.equal(value('require("Storage").read("old.data")'),undefined);
+   value('testZeroProvider.syncTime('+JSON.stringify(binding)+',1800000000000,'+JSON.stringify(binding.executionId)+')');assert.equal(value('testZeroProvider.status().clockInitialized'),true);
+   value('testZeroProvider.activate()');value('eval(require("Storage").read("0vz.boot.js"))');
+   const result=value('testZeroProvider.confirm('+JSON.stringify(binding)+')');assert.equal(result.softwareReady,true);assert.equal(result.sensorSamplesVerified,false);
+   assert.equal(value('require("vz.provider.js").create(testZeroEnv).status().phase'),'complete');fullProtocol=true;
+  }else assert.equal(legacyStagingFailure,true);
  }else{
   // Historical assets are immutable: explicitly reproduce their known failure.
   const legacy=rpc('testZeroProvider.prepare('+JSON.stringify(binding)+',testZeroEnv.checkpointDigest())');assert.match(legacy.error,/Identita o binding non validi/);assert.equal(value('testZeroProvider.status().phase'),'unprepared');
@@ -56,7 +90,7 @@ async function main(){
  for(const [name,code]of [['vz.provider.js','exports.create=function(){throw Error("stale provider");}'],['vz.platform.js','exports.create=function(){throw Error("stale platform");}'],['vz.target.js','exports={fingerprint:"stale",files:[]};']])value('Modules.addCached('+JSON.stringify(name)+','+JSON.stringify(code)+')');
  const warm=value(pkg.uiBootstrapExpression);assert.equal(warm.targetFingerprint,pkg.target.fingerprint);assert.equal(warm.targetFiles,14);assert.equal(value('global.VeraZeroUiReady'),true);
  value('(function(){require("Storage").erase("vz.provider.js");return true;})()');const missing=rpc(pkg.uiBootstrapExpression);assert.match(missing.error,/Module "vz.provider.js" not found/);assert.equal(value('global.VeraZeroUiReady'),false);
- assert.equal(value('require("Storage").read("old.data")'),'preserve');ctx.jsStopIdle();
- console.log(JSON.stringify({ok:true,interpreter:native,emulatorCommit:manifest.commit,packageSource:pkg.sourceCommit,nativeBindingPrepared:nativeBinding,checks:['original-d812-cache-error-reproduced','empty-cache-bootstrap','warm-cache-stale-target-reloaded','old-ui-released-and-lcd-held','missing-module-error-propagated','existing-data-preserved','invalid-bindings-rejected-without-checkpoint-write'].concat(nativeBinding?['valid-binding-prepared-and-native-journal-reloaded','same-intent-replay-idempotent']:['legacy-counted-regexp-rejection-reproduced']),hardware:false,nodeRequireMock:false},null,2));
+ assert.equal(value('require("Storage").read("old.data")'),fullProtocol?undefined:'preserve');ctx.jsStopIdle();
+ console.log(JSON.stringify({ok:true,interpreter:native,emulatorCommit:manifest.commit,packageSource:pkg.sourceCommit,nativeBindingPrepared:nativeBinding,nativeStagingVerified:nativeStaging,nativeProviderProtocolComplete:fullProtocol,checks:['original-d812-cache-error-reproduced','empty-cache-bootstrap','warm-cache-stale-target-reloaded','old-ui-released-and-lcd-held','missing-module-error-propagated','existing-data-preserved-before-wipe','invalid-bindings-rejected-without-checkpoint-write'].concat(nativeBinding?['valid-binding-prepared-and-native-journal-reloaded','same-intent-replay-idempotent',nativeStaging?'all-14-staged-files-hashed-and-partial-retry-verified':'legacy-staging-truncation-reproduced']:['legacy-counted-regexp-rejection-reproduced']).concat(fullProtocol?['native-storage-wipe-install-clock-activation-and-boot-guard-receipt']:[]),hardware:false,nodeRequireMock:false},null,2));
 }
 main().then(()=>process.exit(0),error=>{console.error(error.stack||String(error));process.exit(1);});

@@ -49,9 +49,11 @@ exports.create=function(e){
     bound();if(['activating','activation-pending','complete'].includes(state.phase))fail('Caricamento non previsto');
     var f=file(index),raw=e.unbase64(base64);if(!integer(offset)||offset<0||total!==f.size||!raw.length||raw.length>384||offset+raw.length>total)fail('Blocco non valido');
     if(state.staged.includes(index)){if(matches(stageName(index),f))return status();if(offset!==0)fail('Ripeti il file corrotto da zero');state.staged=state.staged.filter(function(n){return n!==index;});save();}stagedVerified=false;
-    if(offset===0){upload={index:index,next:0};e.write(stageName(index),'',0,total);}
+    if(offset===0){upload={index:index,next:0};}
     if(!upload||upload.index!==index||upload.next!==offset)fail('Ordine blocchi non valido');
-    e.write(stageName(index),raw,offset);upload.next+=raw.length;
+    // Native Storage treats offset zero as a new file. Allocate and write the
+    // first block together, otherwise that block truncates the reserved file.
+    e.write(stageName(index),raw,offset,offset===0?total:undefined);upload.next+=raw.length;
     if(upload.next===total){if(!matches(stageName(index),f))fail('Hash staging non corrispondente');state.staged.push(index);if(!state.wipeConsumed)state.phase='staging';save();upload=undefined;}
     var bytes=state.staged.reduce(function(n,i){return n+file(i).size;},0)+(upload?upload.next:0);e.progress('upload',bytes,e.target.stagingBytes);return status();
   }
