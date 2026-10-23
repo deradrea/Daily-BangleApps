@@ -75,9 +75,23 @@ async function main(){
    // collector health are substituted, so this is not a physical boot test.
    // EMSCRIPTEN2 reads the host clock: its setTime does not change getTime.
    value('(function(){testZeroEnv.enter=function(){global.VeraZeroRecovery=true;};testZeroEnv.activate=function(){};testZeroEnv.setClock=function(ms){global.testZeroUtcMs=ms;return ms;};testZeroEnv.clockUtcMs=function(){return global.testZeroUtcMs;};testZeroEnv.health=function(){return {running:true,scheduled:true,hrmRequested:true};};return true;})()');
+   if(process.argv.includes('--storage-file-fixture'))value('(function(){var f=require("Storage").open("old.offline","w");for(var i=0;i<100;i++)f.write("synthetic offline sample "+i+"\\n");return require("Storage").list(undefined,{sf:true});})()');
    value('testZeroProvider.beginWipe('+JSON.stringify(pkg.target.fingerprint)+')');
    let state=value('testZeroProvider.status()'),steps=0;
-   while(['quarantining','wiping','installing'].includes(state.phase)){assert.ok(++steps<1000);state=value('testZeroProvider.step()');}
+   let repairApplied=false;
+   while(['quarantining','wiping','installing'].includes(state.phase)){assert.ok(++steps<1000);try{state=value('testZeroProvider.step()');}catch(error){
+    if(process.argv.includes('--repair-storagefiles')&&!repairApplied&&String(error).includes('Cancellazione non verificata')){
+     const before=value('testZeroEnv.load()'),support=value('testZeroEnv.supportIntact()');assert.equal(support,true);
+     const source=fs.readFileSync(path.join(root,'initialization/zero/repair-storagefile.js'),'utf8');
+     value('(function(){require("vz.platform.js").create=function(){return testZeroEnv;};return true;})()');
+     const repaired=value('('+source+')('+JSON.stringify(binding)+')');assert.equal(repaired.repairReady,true);
+     assert.deepEqual(value('testZeroEnv.load()'),before);assert.equal(value('testZeroEnv.supportIntact()'),true);
+     // Native radio/isolation/clock are deliberately mocked as above, including
+     // on the replacement adapter. Repair source itself stays unmodified.
+     value('(function(){var p=global.VeraZero;global.testZeroProvider=p;return true;})()');
+     repairApplied=true;state=value('testZeroProvider.status()');
+    }else{console.error(JSON.stringify({nativeFailure:value('testZeroEnv.load()'),remainingStorageFiles:value('require("Storage").list(undefined,{sf:true})')}));throw error;}
+   }}
    assert.equal(state.phase,'verified');assert.equal(value('require("Storage").read("old.data")'),undefined);
    value('testZeroProvider.syncTime('+JSON.stringify(binding)+',1800000000000,'+JSON.stringify(binding.executionId)+')');assert.equal(value('testZeroProvider.status().clockInitialized'),true);
    value('testZeroProvider.activate()');value('eval(require("Storage").read("0vz.boot.js"))');

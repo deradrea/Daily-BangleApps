@@ -26,8 +26,8 @@ function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  let context,env,provider,crashAt=0,mutations=0,battery=99,free=10000000,encrypted=true,firmware='2v29',health=null,clockMs=1800000000000;
  function mutate(kind,name,fn){fn();log.push({kind,name});mutations++;if(crashAt&&mutations===crashAt){crashAt=0;throw Error('power lost after '+kind+':'+name);}}
  const storage={read:(n,o,l)=>{const b=files.get(n);return b===undefined?b:o===undefined?b:b.substr(o,l);},write:(n,b,o,size)=>{mutate('write',n,()=>{if(size!==undefined)files.set(n,'\xff'.repeat(size));if(o===undefined||(o===0&&size===undefined))files.set(n,b);else{const old=files.get(n)||'';if(o+b.length>old.length)throw Error('Too much data for file size');files.set(n,old.slice(0,o)+b+old.slice(o+b.length));}});return true;},erase:n=>{if(sfChunks.has(n))mutate('erase-chunk',n,()=>sfChunks.delete(n));else if(n.endsWith('\x01')&&sf.has(n.slice(0,-1)))mutate('erase-sf',n.slice(0,-1),()=>sf.delete(n.slice(0,-1)));else mutate('erase',n,()=>files.delete(n));},
-  list:(_regex,opts)=>opts&&opts.sf?[...sf.keys()].map(n=>n+'\x01').concat([...sfChunks.keys()]):[...files.keys()],getStats:()=>({freeBytes:free}),
-  open:(n,_mode)=>({read:()=>{throw Error('old StorageFile content must not be loaded');},erase:()=>mutate('erase-sf',n,()=>sf.delete(n))})};
+  list:(_regex,opts)=>opts&&opts.sf?[...new Set([...sf.keys(),...[...sfChunks.keys()].map(n=>n.slice(0,-1))])]:opts&&opts.sf===false?[...files.keys()]:[...files.keys(),...[...sf.keys()].map(n=>n+'\x01'),...sfChunks.keys()],getStats:()=>({freeBytes:free}),
+  open:(n,_mode)=>({read:()=>{throw Error('old StorageFile content must not be loaded');},erase:()=>{if(sf.has(n))mutate('erase-sf',n,()=>sf.delete(n));for(let i=1;sfChunks.has(n+String.fromCharCode(i));i++)mutate('erase-chunk',n+String.fromCharCode(i),()=>sfChunks.delete(n+String.fromCharCode(i)));}})};
  const graphics={getWidth:()=>176};for(const n of ['reset','setBgColor','clear','setFontAlign','setColor','setFont','fillCircle','fillRect','flip'])graphics[n]=()=>graphics;
  graphics.drawString=(s)=>{drawn.push(s);return graphics;};
  const bangle={setLCDPower:()=>{},setBacklight:()=>{},setLCDBrightness:()=>{},setLocked:()=>{},setOptions:()=>{},setLCDTimeout:()=>{},setUI:ui=>{bangle.ui=ui;}};
@@ -203,3 +203,4 @@ test('a fresh app intent replaces incomplete or corrupt attempts without user in
   assert.equal(st.phase,'prepared',prior);assert.equal(st.wipeConsumed,false,prior);assert.equal(st.stagedFiles,0,prior);assert.equal(st.consent,false,prior);
  }
 });
+
