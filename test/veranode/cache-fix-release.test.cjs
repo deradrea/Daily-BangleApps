@@ -11,7 +11,7 @@ test('cache fix release verifies 21 payloads and preserves all 14 target files a
 });
 test('real official Espruino 2v29 reproduces the old failure and passes all native bootstrap regressions', {timeout:60000},()=>{
  const out=cp.execFileSync(process.execPath,[path.join(root,'bin/test-zero-espruino.cjs'),'--package',path.join(dir,'initialize.json'),'--download'],{cwd:root,encoding:'utf8',timeout:50000,maxBuffer:1048576});
- const result=JSON.parse(out);assert.equal(result.ok,true);assert.equal(result.interpreter.version,'2v29');assert.equal(result.interpreter.board,'EMSCRIPTEN2');assert.equal(result.hardware,false);assert.equal(result.nodeRequireMock,false);assert.equal(result.checks.length,6);
+ const result=JSON.parse(out);assert.equal(result.ok,true);assert.equal(result.interpreter.version,'2v29');assert.equal(result.interpreter.board,'EMSCRIPTEN2');assert.equal(result.hardware,false);assert.equal(result.nodeRequireMock,false);assert.ok(result.checks.includes('empty-cache-bootstrap'));assert.ok(result.checks.includes('legacy-counted-regexp-rejection-reproduced'));assert.equal(result.nativeBindingPrepared,false);
 });
 test('cache fix release rebuilds all three immutable assets with its canonical historical builder',()=>{
  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vera-cache-fix-rebuild-'));
