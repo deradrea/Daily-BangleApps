@@ -1,0 +1,17 @@
+{
+  "schema": "vera-zero-ram-repair-release/1",
+  "revision": "veranode-zero-repair-1-a023eb7c54842d22",
+  "sha256": "a023eb7c54842d22f83fb6759bda83cc124ce583f152bf4c2e43d88428e61833",
+  "size": 4736,
+  "sourceCommit": "1d18b78935d4f57dcc8536ab069a9e626b8315e2",
+  "appliesTo": {
+    "packageSha256": "2c74ed8520dc74293b09521bea9b644aaa44b28ae2140ebf9c0a1fe19f5a06de",
+    "targetFingerprint": "83b51c1628cc4c05f5670e29568d87ce8628f601ffda8b058c18839253b28733",
+    "board": "BANGLEJS2",
+    "firmware": "2v29",
+    "phase": "wiping",
+    "pendingKind": "storage-chunk"
+  },
+  "mode": "ram-only",
+  "url": "https://github.com/deradrea/Daily-BangleApps/releases/download/veranode-zero-repair-1-a023eb7c54842d22/repair.json"
+}
