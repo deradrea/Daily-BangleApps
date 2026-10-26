@@ -5,7 +5,7 @@ test('preserving upgrade is reproducible, distinct from first install and binds 
  assert.equal(r.plan.mode,'preserving-upgrade');assert.equal(r.plan.sources.length,2);assert.equal(r.plan.target.files.length,8);assert.equal(r.plan.maintenance.files.length,4);
  for(const f of [...r.plan.target.files,...r.plan.maintenance.files]){const b=Buffer.from(f.base64,'base64');assert.equal(b.length,f.size);assert.equal(crypto.createHash('sha256').update(b).digest('hex'),f.sha256);}
  const seen=new Set(r.plan.target.files.map(f=>f.name));for(const s of r.plan.sources){assert.equal(s.files.length,8);for(const f of s.files)assert.ok(seen.has(f.name));}
- assert.equal(r.descriptor.executionEnabled,false);assert.equal(r.plan.hardwareValidated,false);
+ assert.equal(r.descriptor.executionEnabled,true);assert.equal(r.plan.maintenance.contract.postBootRecovery,true);assert.equal(r.plan.hardwareValidated,false);
  fs.writeFileSync(r.path,'changed');assert.throws(()=>build(output),/Immutable/);fs.rmSync(output,{recursive:true,force:true});
 });
 
@@ -24,6 +24,6 @@ test('upgrade provenance and all sidecars are exact committed bytes, with unchan
    assert.equal(/Number\s*\.\s*(?:isInteger|isFinite|isSafeInteger)\s*\(/.test(raw.toString()),false,name);
   }
   assert.equal(build(out,{sourceCommit:p.provenance.sourceCommit}).sha256,r.sha256);
-  assert.equal(r.descriptor.executionEnabled,false);assert.equal(r.descriptor.hardwareValidated,false);
+  assert.equal(r.descriptor.executionEnabled,true);assert.equal(r.descriptor.hardwareValidated,false);
  }finally{fs.rmSync(out,{recursive:true,force:true});}
 });

@@ -6,6 +6,13 @@ const sources=[
  ['dist/veranode/veranode-0.2.0-dev-545d8915cd396d71/package.json','7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a']];
 function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  const sourceCommit=cp.execFileSync('git',['rev-parse',(options.sourceCommit||'HEAD')+'^{commit}'],{cwd:root,encoding:'utf8'}).trim(),inputs={};
+ const historical=cp.execFileSync('git',['show',sourceCommit+':bin/build-veranode-upgrade.cjs'],{cwd:root});
+ const sameBuilder=historical.toString().replace(/\r\n/g,'\n')===fs.readFileSync(__filename,'utf8').replace(/\r\n/g,'\n');
+ if(!sameBuilder && !options.sourceCommit)throw Error('Commit the upgrade builder before producing an official artifact');
+ if(options.sourceCommit && !sameBuilder){
+  const Module=require('node:module'),previous=new Module(__filename,module);previous.filename=__filename;previous.paths=module.paths;previous._compile(historical.toString(),__filename);
+  return previous.exports.build(output,{sourceCommit});
+ }
  function committed(relative){const bytes=cp.execFileSync('git',['show',sourceCommit+':'+relative],{cwd:root});inputs[relative]=hash(bytes);return bytes;}
  const packages=sources.map(([name,expected])=>{const raw=committed(name);if(hash(raw)!==expected)throw Error('Source package changed');const p=JSON.parse(raw);for(const f of p.files){const b=Buffer.from(f.base64,'base64');if(b.length!==f.size||hash(b)!==f.sha256)throw Error('File changed');}return {packageSha256:expected,revision:p.revision,files:p.files};});
  const sidecar=[['veram.provider.js','provider.js'],['veram.platform.js','platform.js'],['veram.0.boot.js','guard.js'],['veram.app.js','app.js']].map(([name,src])=>{
@@ -24,12 +31,14 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
    bootupdateSha256:hash(crlf(bootupdate)),bootloaderSha256:hash(crlf(bootloader))},
    acceptedBootloaderSha256:variants(bootloader),acceptedBootupdateSha256:variants(bootupdate),
    backupExclusions:['veram.provider.js','veram.platform.js','veram.0.boot.js','veram.app.js','veram.stage','veram.old','veram.state0','veram.state1','veram.plan.json','.boot0','.widcache','.clkinfocache'],
-   recovery:'per-file-old-copy-sha256',activation:'explicit-after-verification'},
+   recovery:'per-file-old-copy-sha256',activation:'explicit-after-verification',
+   contract:{schema:'vera-bangle-update-contract/3',operationBinding:true,frozenBackup:true,profileAbsence:true,
+    verifiedBoot:true,rollbackOnlyRecovery:true,postBootRecovery:true,leaseMaxMs:60000,serverGrantMaxSeconds:300,operationMaxSeconds:7200}},
   provenance:{sourceCommit,bootloaderPrimaryNormalization:'crlf',builderSha256:hash(committed('bin/build-veranode-upgrade.cjs')),inputs},hardwareValidated:false};
  const payload=Buffer.from(JSON.stringify(plan,null,2)+'\n'),sha256=hash(payload),revision='veranode-upgrade-1-'+sha256.slice(0,16),directory=path.join(output,revision);
  fs.mkdirSync(directory,{recursive:true});const file=path.join(directory,'upgrade.json');if(fs.existsSync(file)){if(!fs.readFileSync(file).equals(payload))throw Error('Immutable artifact conflict');}else fs.writeFileSync(file,payload,{flag:'wx'});
  const descriptor={schema:'vera-bangle-upgrade-descriptor/1',revision,sha256,size:payload.length,targetRevision:target.revision,
-  targetPackageSha256:target.packageSha256,executionEnabled:false,hardwareValidated:false};
+  targetPackageSha256:target.packageSha256,executionEnabled:true,hardwareValidated:false};
  const dfile=path.join(directory,'descriptor.json'),dbytes=JSON.stringify(descriptor,null,2)+'\n';
  if(fs.existsSync(dfile)){if(fs.readFileSync(dfile,'utf8')!==dbytes)throw Error('Immutable descriptor conflict');}else fs.writeFileSync(dfile,dbytes,{flag:'wx'});
  return {revision,sha256,size:payload.length,path:file,descriptor,plan};

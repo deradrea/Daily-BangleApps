@@ -15,7 +15,8 @@ function fixture(providerCreate=create){
   isolated:()=>isolated,encrypted:()=>encrypted,consent:()=>consent,profileIdentity:()=>({user:'u',scope:'s',mac:binding.mac}),now:()=>time,random:()=> 'lease-test-001',
   readNormal:n=>files.get(n),writeNormal:(n,raw,offset,size)=>{
     if(n.startsWith('veranode.')&&names.includes(n)){writes++;if(failed){files.set(n,'torn');throw Error('power-loss');}}
-    if(size!==undefined)files.set(n,'\xff'.repeat(size));
+    // Match native Storage: an offset-zero write reallocates the file.
+    if(size!==undefined||offset===0)files.set(n,'\xff'.repeat(size===undefined?raw.length:size));
     if(offset===undefined)files.set(n,raw);else{let old=files.get(n);files.set(n,old.slice(0,offset)+raw+old.slice(offset+raw.length));}
   },read:(f,o,l)=>(f.kind==='normal'?files:data).get(f.name).slice(o,o+l),base64:x=>Buffer.from(x,'latin1').toString('base64'),unbase64:x=>Buffer.from(x,'base64').toString('latin1'),progress:()=>{},activate:()=>{activated=true;}};
  return {env,files,data,binding,provider:()=>providerCreate(env),setTime:t=>time=t,setConsent:v=>consent=v,setEncrypted:v=>encrypted=v,setIsolated:v=>isolated=v,fail:v=>failed=v,get saved(){return saved;},get writes(){return writes;},get activated(){return activated;}};
@@ -54,7 +55,7 @@ test('reconnect retains snapshot, requires new consent and rejects a different b
 });
 test('rollback accepts only exact backed-up software, preserving original data',()=>{
  const f=fixture(),{m,t}=start(f);write(m,t,names[0],'new-'+names[0]);write(m,t,names[0],'old-'+names[0]);
- assert.equal(m.activate(t,true).activationRequested,true);assert.equal(f.saved.phase,'rolled-back');
+ assert.equal(m.activate(t,true).activationRequested,true);assert.equal(f.saved.phase,'rollback-pending');
 });
 test('inventory/read expose exact bytes and reject stale descriptors',()=>{
  const f=fixture(),{m,t}=start(f),rows=m.inventory(t).files,file=rows.find(f=>f.kind==='storage-file');
@@ -67,7 +68,7 @@ test('backup chunk reads use one inventory rather than rehashing the full archiv
  for(let i=0;i<20;i++)m.read(t,file,0,1);assert.equal(scans,before);
 });
 test('cancel before software writes resumes collector; partial replacement requires explicit recovery',()=>{
- const f=fixture(),{m,t}=start(f);assert.equal(m.end(t).resumeRequested,true);assert.equal(f.saved.phase,'rolled-back');
+ const f=fixture(),{m,t}=start(f);assert.equal(m.end(t).resumeRequested,true);assert.equal(f.saved.phase,'rollback-pending');
  const partial=fixture(),session=start(partial);write(session.m,session.t,names[0],'new-'+names[0]);assert.throws(()=>session.m.cancelLocally(),/recupero/);assert.equal(partial.activated,false);
 });
 test('paged inventory fits UART response bounds and returns a stable complete archive',()=>{
@@ -113,4 +114,36 @@ test('missing or unrecognized Vera source fails before any preserving-upgrade wr
  for(const mode of ['missing','unknown']){const f=fixture();if(mode==='missing')f.files.delete(names[0]);else f.files.set(names[0],'not an approved Vera build');
   assert.throws(()=>start(f),/Software origine diverso/);assert.equal(f.writes,0);assert.equal(f.saved.protected,undefined);
   assert.equal(f.data.get('veranode.s0'),'sample\u0000\u00ff\n');assert.equal(f.files.get('veranode.policy.json'),'profile-exact-bytes');}
+});
+
+test('multi-block staging keeps the full allocation with native offset-zero semantics',()=>{
+ const f=fixture(),name=names[0],raw='new-'.repeat(230);
+ const save=f.env.save;f.env.save=s=>save(s);
+ const load=f.env.load;f.env.load=()=>{const s=load();s.plan.files[0].size=raw.length;s.plan.files[0].hash=hash(raw);return s;};
+ const {m,t}=start(f);
+ for(let offset=0;offset<raw.length;offset+=384)m.replaceSoftware(t,name,offset,raw.length,Buffer.from(raw.slice(offset,offset+384),'latin1').toString('base64'));
+ assert.equal(f.files.get(name),raw);assert.equal(f.files.get('veranode.policy.json'),'profile-exact-bytes');
+});
+
+test('recovery rejects a journal transaction outside the immutable source/target plan',()=>{
+ const f=fixture(),load=f.env.load;
+ f.env.load=()=>({...load(),transaction:{name:names[0],oldHash:hash('untrusted'),oldSize:9,newHash:hash('also-untrusted'),newSize:14}});
+ f.files.set('veram.old','untrusted');f.files.set(names[0],'torn');
+ assert.throws(()=>f.provider(),/Transazione non valida/);assert.equal(f.writes,0);
+});
+
+test('v3 binds the operation independently from profile and adopts only rollback recovery',()=>{
+ const f=fixture(),load=f.env.load;
+ const parent={operationId:'01234567-1234-1234-1234-0123456789ab',deviceId:97,mac:f.binding.mac,actorId:'admin',upgradeSha256:f.binding.targetHash,targetPackageSha256:'b'.repeat(64),contextSha256:'c'.repeat(64)};
+ f.env.load=()=>({...load(),operationBinding:parent});
+ const m=f.provider();assert.throws(()=>m.begin(f.binding,60000,null),/Operazione diversa/);
+ const t=m.begin(f.binding,60000,null,parent).token;write(m,t,names[0],'new-'+names[0]);
+ const child={...parent,operationId:'01234567-1234-1234-1234-0123456789ac'};
+ assert.throws(()=>m.adoptRecovery(parent,{...child,deviceId:98}),/Recupero diverso/);
+ assert.equal(m.adoptRecovery(parent,child).mode,'rollback-only');
+ assert.throws(()=>m.renew(t,60000),/scaduta/);
+ const token=m.begin(f.binding,60000,'snapshot-test-001',child).token;
+ assert.throws(()=>write(m,token,names[0],'new-'+names[0]),/Solo ripristino/);
+ write(m,token,names[0],'old-'+names[0]);assert.throws(()=>m.activate(token,false),/Solo ripristino/);
+ assert.equal(m.activate(token,true).activationRequested,true);assert.equal(f.saved.phase,'rollback-pending');
 });

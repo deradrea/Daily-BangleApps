@@ -3,7 +3,7 @@ exports.create = function() {
   var s=require('Storage'),crypto=require('crypto');
   var internal=['veram.provider.js','veram.platform.js','veram.0.boot.js','veram.app.js','veram.stage','veram.old','veram.state0','veram.state1','veram.plan.json'];
   var generated=['.boot0','.widcache','.clkinfocache'];
-  var rawRead=global.VeraMaintenanceStorageRead || s.read.bind(s), generation=0;
+  var rawRead=global.VeraMaintenanceStorageRead || s.read.bind(s), generation=0, cursor;
   function hash(raw) { var out='',a=new Uint8Array(crypto.SHA256(raw)); for(var i=0;i<a.length;i++)out+=('0'+a[i].toString(16)).slice(-2);return out; }
   function canonical(x) {
     if (Array.isArray(x)) return '['+x.map(canonical).join(',')+']';
@@ -33,11 +33,20 @@ exports.create = function() {
       if(internal.includes(name)||generated.includes(name))return;
       var raw=rawRead(name);rows.push({name:name,kind:'normal',size:raw.length,hash:hash(raw)});
     });
-    var seen={};s.list(undefined,{sf:true}).forEach(function(raw){
-      var name=raw.slice(0,-1);if(seen[name]===true)return;seen[name]=true;
+    // In 2v29 the sf filter already returns base names, without chunk suffixes.
+    var seen={};s.list(undefined,{sf:true}).forEach(function(name){
+      if(seen[name]===true)return;seen[name]=true;
       var data=sf(name);rows.push({name:name,kind:'storage-file',size:data.length,hash:hash(data)});
     });
     if(rows.length>512)throw Error('Troppi file per il backup');return rows;
+  }
+  function read(file,offset,length) {
+    if(file.kind==='normal')return rawRead(file.name,offset,length);
+    // Backups read sequential blocks. Retain only a reader and offset, never
+    // the complete journal, and reopen safely for a retried/earlier block.
+    if(!cursor||cursor.name!==file.name||cursor.next>offset)cursor={name:file.name,next:0,file:s.open(file.name,'r')};
+    while(cursor.next<offset){var skip=cursor.file.read(Math.min(512,offset-cursor.next));if(!skip)throw Error('StorageFile incompleto');cursor.next+=skip.length;}
+    var raw=cursor.file.read(length)||'';cursor.next+=raw.length;return raw;
   }
   var consent=false;
   return {load:load,save:save,hash:hash,canonical:canonical,inventory:inventory,
@@ -52,7 +61,7 @@ exports.create = function() {
       if(s.getStats().freeBytes<data.length+(size||0)+4096)throw Error('Spazio libero insufficiente per aggiornare');
       if(s.write(name,data,offset,size)===false)throw Error('Scrittura flash non riuscita');
     },
-    read:function(file,offset,length){if(file.kind==='normal')return rawRead(file.name,offset,length);return sf(file.name).substr(offset,length);},
+    read:read,
     base64:btoa,unbase64:atob,
     progress:function(name){global.VeraMaintenanceProgress=name;},
     activate:function(){setTimeout(function(){global.load();},300);}
