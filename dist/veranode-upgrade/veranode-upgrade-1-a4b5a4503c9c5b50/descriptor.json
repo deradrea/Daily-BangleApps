@@ -1,0 +1,10 @@
+{
+  "schema": "vera-bangle-upgrade-descriptor/1",
+  "revision": "veranode-upgrade-1-a4b5a4503c9c5b50",
+  "sha256": "a4b5a4503c9c5b504c54cf6b1d3b817ae374f62dbbb791001458841d3d76c449",
+  "size": 179004,
+  "targetRevision": "veranode-0.2.0-dev-545d8915cd396d71",
+  "targetPackageSha256": "7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a",
+  "executionEnabled": true,
+  "hardwareValidated": false
+}
