@@ -24,6 +24,12 @@ L'identità amministrativa dell'operazione comprende sette campi separati dal
 proprietario del profilo. Sono conservati anche un profilo di altro utente o
 l'assenza del profilo, usando SHA256/null. Il tokenRAM dura al massimo60s;
 l'app lo rinnova entro il permesso di fase di Vera, senza richiesteHTTP perchunk.
+L'autorizzazione del pacchetto è esplicitamente app-confirmed: PIN verificato
+da Vera e conferma dell'operazione nell'app, senza un secondo consenso da
+toccare sull'orologio. Il journal lega tale conferma alla singola operazione;
+restano obbligatori collegamento cifrato, binding esatto e permessi di fase.
+Il provider non verifica una firma crittografica del server: i grant sono
+controllati dal client ufficiale, e la ricevuta resta evidenza client.
 
 ## Ripresa e ripristino
 
@@ -37,6 +43,9 @@ raccolta, l'app congela lo stato CORRENTE e verifica un secondo backup. Dal
 backup del parent provengono soltanto gli otto file software originali; i
 campioni più recenti e il profilo corrente vengono protetti dal nuovo backup.
 Non si ripristina un archivio vecchio sopra i nuovi dati.
+Se la preparazione si interrompe prima del backup e di qualsiasi scrittura
+runtime, il recupero close-only verifica gli otto file originali ed esce dalla
+manutenzione senza copiare software e senza inventare un backup.
 
 Il boot guard confronta gli hash software e il profilo, poi la salute prevista
 della raccolta. Gli hash dei journal sono confrontati prima dell'attivazione;

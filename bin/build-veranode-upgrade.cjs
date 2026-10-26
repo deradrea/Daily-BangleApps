@@ -24,6 +24,7 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  const variants=bytes=>[...new Set([hash(bytes),hash(crlf(bytes))])];
  const plan={schema:'vera-bangle-preserving-upgrade/1',board:'BANGLEJS2',firmware:['2v29'],mode:'preserving-upgrade',
   preservesFirmware:true,preserveSamples:true,preserveProfile:true,eraseAllowed:false,protocolVersion:1,
+  authorization:{mode:'app-confirmed',physicalConsent:false,confirmUpdate:true,pinRequired:true},
   sourceRepository:'https://github.com/deradrea/Daily-BangleApps',
   target:{revision:target.revision,packageSha256:target.packageSha256,files:target.files},
   sources:packages.map(p=>({revision:p.revision,packageSha256:p.packageSha256,files:rows(p.files),journalCompatibility:'veranode-journal-crc16/1'})),

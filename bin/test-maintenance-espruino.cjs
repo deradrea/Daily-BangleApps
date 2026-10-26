@@ -37,6 +37,13 @@ async function main(){
  assert.equal(value('VeraMaintenanceActivation.confirm().result'),'rolled-back');
  assert.equal(value('VeraMaintenanceActivation.confirm().result'),'rolled-back','lost confirmation reply can be retried');
  assert.deepEqual(value('e.inventory().filter(function(f){return f.kind==="storage-file"||f.name==="veranode.policy.json";})'),grown);
- ctx.jsStopIdle();console.log(JSON.stringify({ok:true,interpreter:'2v29',hardware:false,checks:['native-sha-validation','native-storagefile-base-name','native-multiblock-staging','exact-protected-bytes','exact-software-rollback','post-boot-grown-journals-preserved','rollback-boot-confirmed-and-retryable']},null,2));
+ const parent={operationId:'01234567-1234-1234-1234-0123456789ab',deviceId:97,mac:binding.mac,actorId:'admin',upgradeSha256:binding.targetHash,targetPackageSha256:'b'.repeat(64),contextSha256:'c'.repeat(64)};
+ const child={...parent,operationId:'01234567-1234-1234-1234-0123456789ac'};
+ value('(function(){var state=e.load();state.phase="prepared";state.mode="update";state.operationBinding='+JSON.stringify(parent)+';state.authorizationMode="app-confirmed";state.appConsentOperationId=state.operationBinding.operationId;state.protected=undefined;state.profileCaptured=undefined;e.save(state);e.setConsent(false);global.nativeRuntimeWrites=0;var original=e.writeNormal;e.writeNormal=function(n,d,o,z){if('+JSON.stringify(names)+'.includes(n))nativeRuntimeWrites++;return original(n,d,o,z);};global.m=require("veram.provider.js").create(e);return true;})()');
+ assert.equal(value('m.operationContext().consent'),true,'app confirmation needs no physical watch consent');
+ value('m.adoptRecovery('+JSON.stringify(parent)+','+JSON.stringify(child)+')');
+ const approved=value('m.begin('+JSON.stringify(binding)+',60000,"native-recovery-001",'+JSON.stringify(child)+')');assert.equal(approved.authorizationMode,'app-confirmed');
+ value('m.activate('+JSON.stringify(approved.token)+',true)');assert.equal(value('nativeRuntimeWrites'),0,'close-only never rewrites runtime');
+ ctx.jsStopIdle();console.log(JSON.stringify({ok:true,interpreter:'2v29',hardware:false,checks:['native-sha-validation','native-storagefile-base-name','native-multiblock-staging','exact-protected-bytes','exact-software-rollback','post-boot-grown-journals-preserved','rollback-boot-confirmed-and-retryable','app-confirmed-without-watch-touch','close-only-adoption-before-begin-zero-runtime-writes']},null,2));
 }
 main().then(()=>process.exit(0),error=>{console.error(error.stack||String(error));process.exit(1);});

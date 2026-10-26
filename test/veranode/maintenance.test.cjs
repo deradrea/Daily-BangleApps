@@ -153,3 +153,16 @@ test('activation invalidates the lease immediately and prevents further writes b
  assert.throws(()=>m.renew(t,60000),/scaduta/);assert.throws(()=>write(m,t,names[0],'new-'+names[0]),/scaduta/);
  assert.throws(()=>m.begin(f.binding,60000,null),/attendi riavvio/);assert.equal(f.writes,0);
 });
+
+test('app-confirmed operation needs no watch touch and close-only adoption works before begin',()=>{
+ const f=fixture(),load=f.env.load;
+ const parent={operationId:'01234567-1234-1234-1234-0123456789ab',deviceId:97,mac:f.binding.mac,actorId:'admin',upgradeSha256:f.binding.targetHash,targetPackageSha256:'b'.repeat(64),contextSha256:'c'.repeat(64)};
+ f.env.load=()=>({...load(),operationBinding:parent,authorizationMode:'app-confirmed',appConsentOperationId:parent.operationId});
+ f.setConsent(false);const m=f.provider();assert.equal(m.operationContext().consent,true);
+ assert.throws(()=>m.begin(f.binding,60000,null,{...parent,deviceId:98}),/Operazione diversa/);
+ const child={...parent,operationId:'01234567-1234-1234-1234-0123456789ac'};
+ const adopted=m.adoptRecovery(parent,child);assert.equal(adopted.mode,'rollback-only');assert.equal(adopted.authorizationMode,'app-confirmed');
+ const token=m.begin(f.binding,60000,adopted.snapshot,child).token;m.activate(token,true);
+ assert.equal(f.writes,0);assert.equal(f.saved.appConsentOperationId,child.operationId);
+ assert.equal(f.files.get('veranode.policy.json'),'profile-exact-bytes');
+});

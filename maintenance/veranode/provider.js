@@ -19,6 +19,8 @@ exports.create = function(env) {
       value.upgradeSha256===state.binding.targetHash && sha(value.upgradeSha256) && sha(value.targetPackageSha256) && sha(value.contextSha256);
   }
   function profileHash() {var raw=env.readNormal('veranode.policy.json');return raw===undefined?null:digest(raw);}
+  function appConfirmed(){return state.authorizationMode==='app-confirmed'&&operation(state.operationBinding)&&state.appConsentOperationId===state.operationBinding.operationId;}
+  function consent(){return appConfirmed()||env.consent();}
   function persist() { env.save(state); }
   if (!state || !state.binding || !state.plan || !Array.isArray(state.plan.files) || state.plan.files.length!==names.length ||
     names.some(function(n){return state.plan.files.filter(function(f){return f.name===n;}).length!==1;}) ||
@@ -59,10 +61,10 @@ exports.create = function(env) {
   function unchanged(rows) {
     if (!same(protectedFiles(rows || inventoryRows()), state.protected)) fail('Dati o profilo cambiati');
   }
-  function response() { return {token:lease,snapshot:state.snapshot,isolated:true,consent:true,binding:state.binding,operationBinding:state.operationBinding,ttlMs:expires-env.now()}; }
+  function response() { return {token:lease,snapshot:state.snapshot,isolated:true,consent:true,authorizationMode:appConfirmed()?'app-confirmed':'physical',binding:state.binding,operationBinding:state.operationBinding,ttlMs:expires-env.now()}; }
   function begin(binding, ttl, resume, operationBinding) {
     if(['activation-pending','rollback-pending','complete','rolled-back'].includes(state.phase))fail('Attivazione richiesta: attendi riavvio');
-    if (!env.isolated() || !env.encrypted() || !env.consent()) fail('Consenso necessario');
+    if (!env.isolated() || !env.encrypted() || !consent()) fail('Consenso necessario');
     if (!same(binding,state.binding) || (resume && resume!==state.snapshot)) fail('Contesto diverso');
     if (state.operationBinding && !same(operationBinding,state.operationBinding)) fail('Operazione diversa');
     if (!integer(ttl) || ttl<1 || ttl>60000) fail('Durata non valida');
@@ -76,6 +78,7 @@ exports.create = function(env) {
     } else unchanged();
     if(env.consumeConsent)env.consumeConsent();
     lease=env.random(); expires=env.now()+ttl;upload=undefined;rowsCache=undefined;
+    env.progress({phase:'backup',done:0,total:0});
     return response();
   }
   function renew(token,ttl) { guard(token);if(!integer(ttl)||ttl<1||ttl>60000)fail('Durata non valida');expires=env.now()+ttl;return response(); }
@@ -91,7 +94,9 @@ exports.create = function(env) {
   function read(token, descriptor, offset, length) {
     guard(token);if(!rowsCache)rowsCache=inventoryRows();var f=rowsCache.find(function(r){return r.kind===descriptor.kind&&r.name===descriptor.name;});
     if (!f || !same(f,descriptor) || !integer(offset)||!integer(length)||offset<0||length<1||length>512||offset+length>f.size) fail('Blocco non valido');
-    return {token:lease,offset:offset,base64:env.base64(env.read(f,offset,length))};
+    var raw=env.read(f,offset,length);
+    env.progress({phase:'backup',done:offset+raw.length,total:f.size,fileIndex:rowsCache.indexOf(f)+1,fileTotal:rowsCache.length});
+    return {token:lease,offset:offset,base64:env.base64(raw)};
   }
   function replaceSoftware(token,name,offset,total,base64) {
     guard(token);if(offset===0)unchanged();
@@ -115,8 +120,8 @@ exports.create = function(env) {
       env.writeNormal(name,next);
       if (!matches(name,state.transaction.newHash,state.transaction.newSize)) fail('File scritto non verificato');
       state.transaction=null;persist();upload=undefined;rowsCache=undefined;
-      env.progress(name);
     }
+    env.progress({phase:state.mode==='rollback-only'?'rollback':'writing',done:offset+raw.length,total:total,fileIndex:names.indexOf(name)+1,fileTotal:names.length});
     return {token:lease,next:offset+raw.length};
   }
   function originalReady() {return state.plan.files.every(function(f){return matches(f.name,f.sourceHash,f.sourceSize);});}
@@ -134,7 +139,7 @@ exports.create = function(env) {
     state.plan.files.forEach(function(f){if(!matches(f.name,rollback?f.sourceHash:f.hash,rollback?f.sourceSize:f.size))fail('Software incompleto');});
     state.phase=rollback?'rollback-pending':'activation-pending';persist();
     var previous=lease;lease=undefined;expires=0;upload=undefined;
-    env.activate();return {token:previous,activationRequested:true};
+    env.progress({phase:'boot',done:1,total:1});env.activate();return {token:previous,activationRequested:true};
   }
   // Recovery is possible without an active BLE lease; no acquisition starts here.
   recover();
@@ -143,19 +148,26 @@ exports.create = function(env) {
     var rows=inventoryRows(),protectedRows=protectedFiles(rows);
     if(state.protected)unchanged(rows);
     return {operationBinding:state.operationBinding,binding:state.binding,snapshot:state.snapshot,phase:state.phase,
-      frozen:env.isolated(),consent:env.consent(),inventorySha256:digest(env.canonical({token:state.snapshot,files:rows})),
+      frozen:env.isolated(),consent:consent(),authorizationMode:appConfirmed()?'app-confirmed':'physical',inventorySha256:digest(env.canonical({token:state.snapshot,files:rows})),
       protectedSha256:digest(env.canonical(protectedRows)),profileSha256:profileHash(),
       collectionWasRunning:state.collectionWasRunning===true,expectedCollectionRunning:state.expectedCollectionRunning===undefined?state.collectionWasRunning===true:state.expectedCollectionRunning===true,mode:state.mode||'update',files:rows.filter(function(f){return f.kind==='normal'&&names.includes(f.name);})};
   }
   function operationContext() {
     if(!env.encrypted())fail('Associazione cifrata necessaria');
-    return {operationBinding:state.operationBinding,snapshot:state.snapshot,frozen:env.isolated(),consent:env.consent(),phase:state.phase};
+    return {operationBinding:state.operationBinding,snapshot:state.snapshot,frozen:env.isolated(),consent:consent(),authorizationMode:appConfirmed()?'app-confirmed':'physical',phase:state.phase};
   }
   function adoptRecovery(parent,child) {
-    if(!env.isolated()||!env.encrypted()||!env.consent())fail('Consenso necessario');
+    if(!env.isolated()||!env.encrypted()||!consent())fail('Consenso necessario');
     if(!same(parent,state.operationBinding)||!operation(child)||child.operationId===parent.operationId||
       child.deviceId!==parent.deviceId||child.actorId!==parent.actorId||child.targetPackageSha256!==parent.targetPackageSha256)fail('Recupero diverso');
-    recover();unchanged();state.parentOperationBinding=parent;state.operationBinding=child;state.mode='rollback-only';persist();
+    recover();
+    if(!state.protected){
+      if(!originalReady())fail('Software originale da verificare');
+      state.protected=protectedFiles(inventoryRows());state.profileSha256=profileHash();state.profileCaptured=true;
+    }else unchanged();
+    var approved=appConfirmed();state.parentOperationBinding=parent;state.operationBinding=child;state.mode='rollback-only';
+    if(approved)state.appConsentOperationId=child.operationId;
+    persist();
     lease=undefined;expires=0;upload=undefined;rowsCache=undefined;
     return status();
   }
