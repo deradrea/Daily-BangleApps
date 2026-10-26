@@ -61,6 +61,7 @@ exports.create = function(env) {
   }
   function response() { return {token:lease,snapshot:state.snapshot,isolated:true,consent:true,binding:state.binding,operationBinding:state.operationBinding,ttlMs:expires-env.now()}; }
   function begin(binding, ttl, resume, operationBinding) {
+    if(['activation-pending','rollback-pending','complete','rolled-back'].includes(state.phase))fail('Attivazione richiesta: attendi riavvio');
     if (!env.isolated() || !env.encrypted() || !env.consent()) fail('Consenso necessario');
     if (!same(binding,state.binding) || (resume && resume!==state.snapshot)) fail('Contesto diverso');
     if (state.operationBinding && !same(operationBinding,state.operationBinding)) fail('Operazione diversa');
@@ -121,7 +122,7 @@ exports.create = function(env) {
   function originalReady() {return state.plan.files.every(function(f){return matches(f.name,f.sourceHash,f.sourceSize);});}
   function cancelLocally() {
     recover();unchanged();if(!originalReady())fail('Riprendi il recupero dall app');
-    state.phase='rollback-pending';persist();env.activate();return {resumeRequested:true};
+    state.phase='rollback-pending';persist();lease=undefined;expires=0;upload=undefined;env.activate();return {resumeRequested:true};
   }
   function end(token) {
     guard(token);recover();unchanged();var resume=originalReady();
@@ -132,7 +133,8 @@ exports.create = function(env) {
     if(state.mode==='rollback-only' && rollback!==true)fail('Solo ripristino consentito');
     state.plan.files.forEach(function(f){if(!matches(f.name,rollback?f.sourceHash:f.hash,rollback?f.sourceSize:f.size))fail('Software incompleto');});
     state.phase=rollback?'rollback-pending':'activation-pending';persist();
-    env.activate();return {token:lease,activationRequested:true};
+    var previous=lease;lease=undefined;expires=0;upload=undefined;
+    env.activate();return {token:previous,activationRequested:true};
   }
   // Recovery is possible without an active BLE lease; no acquisition starts here.
   recover();

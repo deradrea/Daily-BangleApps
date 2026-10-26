@@ -49,7 +49,7 @@ test('changed protected bytes stop writes and activation',()=>{
  const f=fixture(),{m,t}=start(f);f.data.set('veranode.s0','changed');assert.throws(()=>write(m,t,names[0],'new-'+names[0]),/Dati/);assert.equal(f.writes,0);
 });
 test('reconnect retains snapshot, requires new consent and rejects a different binding',()=>{
- const f=fixture(),{m,t}=start(f);m.end(t);f.setConsent(false);assert.throws(()=>m.begin(f.binding,60000,'snapshot-test-001'));
+ const f=fixture();start(f);const m=f.provider();f.setConsent(false);assert.throws(()=>m.begin(f.binding,60000,'snapshot-test-001'));
  f.setConsent(true);assert.throws(()=>m.begin({...f.binding,user:'other'},60000,null));assert.throws(()=>m.begin(f.binding,60000,'wrong-snapshot'));
  assert.equal(m.begin(f.binding,60000,'snapshot-test-001').snapshot,'snapshot-test-001');
 });
@@ -146,4 +146,10 @@ test('v3 binds the operation independently from profile and adopts only rollback
  assert.throws(()=>write(m,token,names[0],'new-'+names[0]),/Solo ripristino/);
  write(m,token,names[0],'old-'+names[0]);assert.throws(()=>m.activate(token,false),/Solo ripristino/);
  assert.equal(m.activate(token,true).activationRequested,true);assert.equal(f.saved.phase,'rollback-pending');
+});
+
+test('activation invalidates the lease immediately and prevents further writes before reboot',()=>{
+ const f=fixture(),{m,t}=start(f);m.activate(t,true);
+ assert.throws(()=>m.renew(t,60000),/scaduta/);assert.throws(()=>write(m,t,names[0],'new-'+names[0]),/scaduta/);
+ assert.throws(()=>m.begin(f.binding,60000,null),/attendi riavvio/);assert.equal(f.writes,0);
 });
