@@ -57,8 +57,14 @@ Artefatti pubblicati su GitHub e riscaricati con SHA-256 verificati:
 - https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-upgrade-1-68d81eaaaa993450
 
 Release non draft/non prerelease al commit artefatti5ce25522d. Mobile146 installata
-sull'S21 con dati e selezione conservati. Catalogo Web in allineamento separato;
-le pratiche esistenti mantengono i loro pacchetti. Baseline diagnostica F0:AA:
-151campioni,95% non in carica,raccolta attiva,profilo ancora da configurare.
+sull'S21 con dati e selezione conservati. Catalogo Web pubblicato al commit
+355b7f539ccaeeac79412f4ece109289327d029c,run40463260722 riuscito eVERA_DEPLOY_OK;
+zero online servito con digest esatto. Disponibilità upgrade verificata viaHTTP
+sull'S21 senza avviarlo. Profilo approvato sola raccolta revisione1 applicato e
+confermato dal Bangle,scadenza29ottobre2026 06:38:20UTC. Snapshot successivo:
+170campioni,95% non in carica,raccolta attiva. Nessun campione recuperato/cancellato.
+I pacchetti storici restano disponibili sul server; la146 Mobile ha un limite
+di lookup per riprese498e promosse a resume-only,corretto nei sorgenti per una
+prossima build. Non riguarda l'upgrade68d81 delF0:AA. Nessun nuovo runtime installato.
 L'allineamento Web riguarda catalogo/API, non rigenerazione dei sorgenti Bangle.
 Usare i digest sopra e la provenienza Git, senza ricostruzioni lato consumer.
