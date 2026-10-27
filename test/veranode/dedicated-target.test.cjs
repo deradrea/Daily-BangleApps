@@ -64,7 +64,9 @@ test('canonical dedicated builder produces 14 verified files and records its rel
   assert.equal(r.bundle.executionEnabled,config.executionEnabled);assert.equal('hardwareIdentityVerified' in r.bundle,false);assert.equal('allowedMacs' in r.bundle.executionPolicy,false);assert.deepEqual(r.bundle.executionPolicy,config.executionPolicy);
   for(const f of [...r.bundle.bootstrap,...r.bundle.target.files]){const b=Buffer.from(f.base64,'base64');assert.equal(b.length,f.size);assert.equal(sha(b),f.sha256);}
   assert.equal(r.bundle.target.installOrder.length,13);assert.equal(r.bundle.target.installOrder.at(-1),'.bootcde');assert.equal(r.bundle.target.installOrder.includes('.boot0'),false);
-  assert.equal(r.bundle.runtimePackageSha256,parent.runtimePackageSha256);
+  const selected=require('../../bin/veranode-runtime-selection.cjs').select(n=>cp.execFileSync('git',['show',sourceCommit+':'+n],{cwd:root}));
+  assert.equal(r.bundle.runtimePackageSha256,selected.packageSha256);
+  for(const f of selected.files)assert.deepEqual(r.bundle.target.files.find(t=>t.name===f.name),f);
   for(const name of ['bin/veranode-dedicated-target.cjs','initialization/zero/launcher.js','initialization/zero/dedicated-release.json'])assert.equal(r.bundle.provenance.inputs[name],sha(cp.execFileSync('git',['show',sourceCommit+':'+name],{cwd:root})));
   const again=require('../../bin/build-veranode-zero.cjs').build(tmp,{targetProfile:'veranode-only',sourceCommit});assert.equal(again.sha256,r.sha256);
  }finally{fs.rmSync(tmp,{recursive:true,force:true});}

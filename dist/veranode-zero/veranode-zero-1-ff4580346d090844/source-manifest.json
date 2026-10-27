@@ -1,0 +1,23 @@
+{
+  "schema": "vera-bangle-zero-source-manifest/1",
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "sourceCommit": "0e88c2768a175e89f0010f8c9ccabe8c51a56d21",
+  "files": {
+    "dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+    "initialization/zero/provider.js": "b35dbddd43faa5ed8a46ab3adf1c477c8a63988b1a02e8928fd1f12e320e96ed",
+    "initialization/zero/platform.js": "935e1e962ed12c4080bbcb6105b15103b08044dddafc0377a0a67ea6e2e2e4b9",
+    "initialization/zero/recovery.js": "dc615e066e56a5c0aa0ed125d2fdb14012681ce150757cf26f0318f5b59af454",
+    "initialization/zero/app.js": "1570ba48611bc45274e174a1f9fbe5fb64ead177d4490cf810eb645707346a61",
+    "initialization/zero/display.js": "e90b99cd3230aae99a65e953d6d5245d1dd4e053877f6a3719302fe97ddcf48a",
+    "initialization/zero/guard.js": "81ae1b14a5f8566669770c242f7eeef61172c0f30863d2fa7d4b3a26570e45d1",
+    "bin/veranode-runtime-selection.cjs": "4f82307b4d05ff0266c4c94890380720541b0635c96e4740add876d265f436c0",
+    "releases/veranode-runtime.json": "abf5116a0ab36d1e8481e7112c5bce882c7d76107955b7a635ef576ab8edf130",
+    "dist/veranode/veranode-0.2.0-dev-f4f3226f8bca4f26/package.json": "91d5ae89f4c715ddec004dd98a30277ca7251671604ad69913873c78d928aa01",
+    "initialization/zero/dedicated-release.json": "1ea4fa3c82920129658de1de3f80e0c1f862c996cafcbd42a57d625fd2e91625",
+    "bin/veranode-dedicated-target.cjs": "535671223876e139a1be3d2bdcb3e95dae28b36f7ca70e3089199bf794a2e8d7",
+    "initialization/zero/launcher.js": "bf6b205d9e1fce34a97e929cb2ee52828db48fb063fd012ed115c266568776bf",
+    "bin/build-veranode-zero.cjs": "79233d095dce79693e8fe371833c59a48d31feb851d12548daefbc756d5efb32"
+  },
+  "parentInitializeSha256": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+  "runtimePackageSha256": "91d5ae89f4c715ddec004dd98a30277ca7251671604ad69913873c78d928aa01"
+}

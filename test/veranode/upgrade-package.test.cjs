@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {build}=require('../../bin/build-veranode-upgrade.cjs');
 test('preserving upgrade is reproducible, distinct from first install and binds every source/destination byte',()=>{
  const output=fs.mkdtempSync(path.join(os.tmpdir(),'vera-upgrade-')),r=build(output),again=build(output);assert.equal(r.sha256,again.sha256);assert.equal(r.plan.eraseAllowed,false);assert.equal(r.plan.preserveSamples,true);assert.equal(r.plan.preserveProfile,true);
- assert.equal(r.plan.mode,'preserving-upgrade');assert.equal(r.plan.sources.length,2);assert.equal(r.plan.target.files.length,8);assert.equal(r.plan.maintenance.files.length,4);
+ assert.equal(r.plan.mode,'preserving-upgrade');assert.equal(r.plan.sources.length,3);assert.equal(r.plan.target.files.length,8);assert.equal(r.plan.maintenance.files.length,4);
  for(const f of [...r.plan.target.files,...r.plan.maintenance.files]){const b=Buffer.from(f.base64,'base64');assert.equal(b.length,f.size);assert.equal(crypto.createHash('sha256').update(b).digest('hex'),f.sha256);}
  const seen=new Set(r.plan.target.files.map(f=>f.name));for(const s of r.plan.sources){assert.equal(s.files.length,8);for(const f of s.files)assert.ok(seen.has(f.name));}
  assert.equal(r.descriptor.executionEnabled,true);assert.equal(r.plan.maintenance.contract.postBootRecovery,true);assert.equal(r.plan.hardwareValidated,false);
@@ -10,10 +10,13 @@ test('preserving upgrade is reproducible, distinct from first install and binds 
 });
 
 
-test('upgrade provenance and all sidecars are exact committed bytes, with unchanged target and sources',()=>{
+test('upgrade provenance selects the canonical target, retains prior sources and exact maintenance bytes',()=>{
  const cp=require('node:child_process'),root=path.resolve(__dirname,'../..'),out=fs.mkdtempSync(path.join(os.tmpdir(),'vera-upgrade-git-'));
  try{const r=build(out),p=r.plan,old=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-upgrade/veranode-upgrade-1-d749066fdad7002d/upgrade.json')));
-  assert.deepEqual(p.target,old.target);assert.deepEqual(p.sources,old.sources);assert.deepEqual(p.maintenance.backupExclusions,old.maintenance.backupExclusions);
+  const selected=require('../../bin/veranode-runtime-selection.cjs').select(n=>cp.execFileSync('git',['show',p.provenance.sourceCommit+':'+n],{cwd:root}));
+  assert.deepEqual(p.target,selected);
+  for(const source of old.sources)assert.deepEqual(p.sources.find(s=>s.revision===source.revision),source);
+  assert.deepEqual(p.maintenance.backupExclusions,old.maintenance.backupExclusions);
   assert.deepEqual(p.maintenance.bootloader,old.maintenance.bootloader);
   const init=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json')));
   assert.deepEqual(p.maintenance.acceptedBootloaderSha256,init.target.acceptedBootloaderSha256);
