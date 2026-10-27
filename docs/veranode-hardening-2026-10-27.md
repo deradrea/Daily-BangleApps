@@ -50,7 +50,15 @@ comando è stato inviato al Bangle per questa revisione. Il collaudo24ore resta 
 
 ## Distribuzione
 
-Artefatti preparati nel repository locale. Il catalogo online corrente e le
-pratiche esistenti mantengono i loro pacchetti; la revisione non li modifica.
+Artefatti pubblicati su GitHub e riscaricati con SHA-256 verificati:
+
+- https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-0.2.0-dev-f4f3226f8bca4f26
+- https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-zero-1-ff4580346d090844
+- https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-upgrade-1-68d81eaaaa993450
+
+Release non draft/non prerelease al commit artefatti5ce25522d. Mobile146 installata
+sull'S21 con dati e selezione conservati. Catalogo Web in allineamento separato;
+le pratiche esistenti mantengono i loro pacchetti. Baseline diagnostica F0:AA:
+151campioni,95% non in carica,raccolta attiva,profilo ancora da configurare.
 L'allineamento Web riguarda catalogo/API, non rigenerazione dei sorgenti Bangle.
 Usare i digest sopra e la provenienza Git, senza ricostruzioni lato consumer.
