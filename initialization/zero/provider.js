@@ -40,7 +40,7 @@ exports.create=function(e){
     if(!appConfirmed&&!consent)fail('Conferma attuale sul Bangle necessaria');
     if(previousCheckpointDigest!==e.checkpointDigest())fail('Checkpoint cambiato prima della nuova esecuzione');
     var info=e.inspect();if(!info.compatible)fail('Modello o firmware non supportato');
-    if(!integer(info.batteryPercent)||info.batteryPercent<50||info.batteryPercent>100)fail('Carica il Bangle almeno al 50%');
+    if(!integer(info.batteryPercent)||info.batteryPercent<=50||info.batteryPercent>100)fail('Carica il Bangle oltre il 50%');
     if(!integer(info.freeBytes)||info.freeBytes<e.target.stagingBytes*2+65536)fail('Spazio insufficiente per staging e recupero');
     state={protocol:1,binding:binding,targetFingerprint:e.target.fingerprint,phase:'prepared',staged:[],wipeConsumed:false,removed:0,wipeTotal:0,installed:0,bootCommitted:false,armed:0,activation:0,pending:null};
     e.replace(state,previousCheckpointDigest);e.invalidateBoot();loadError=null;upload=undefined;stagedVerified=false;paint();return status();
@@ -127,7 +127,7 @@ exports.create=function(e){
     bound();if(!same(binding,state.binding)||!['activation-pending','complete'].includes(state.phase))fail('Esito di un altra esecuzione');
     var receipt=e.bootReceipt();if(receipt.generation!==state.binding.generation||receipt.executionId!==state.binding.executionId)fail('Riavvio ufficiale non ancora verificato');
     var h=e.health();if(e.settings().clock!=='veranode.app.js'||!h||h.running!==true||h.scheduled!==true||h.hrmRequested!==true)fail('Vera o raccolta non avviati');
-    verify();state.phase='complete';save();e.cleanup();paint();return {softwareReady:true,clockVerified:false,sensorSamplesVerified:false,collectionRunning:true,binding:state.binding,clockUtcMs:e.clockUtcMs(),runtimePackageSha256:e.target.runtimePackageSha256,health:h};
+    verify();if(state.phase!=='complete'){state.phase='complete';save();}e.cleanup();paint();return {softwareReady:true,clockVerified:false,sensorSamplesVerified:false,collectionRunning:true,binding:state.binding,clockUtcMs:e.clockUtcMs(),runtimePackageSha256:e.target.runtimePackageSha256,health:h};
   }
   function inventoryPage(offset,limit){bound();if(!integer(offset)||!integer(limit)||offset<0||limit<1||limit>24)fail('Pagina non valida');var rows=e.inventory();return {offset:offset,total:rows.length,next:Math.min(rows.length,offset+limit),files:rows.slice(offset,offset+limit)};}
   var api={protocol:1,status:status,inspect:inspect,requestSecurity:e.requestSecurity,securityStatus:e.securityStatus,setConsent:function(on){consent=on===true;e.consentChanged(consent);paint();},prepare:prepare,recover:recover,stagingProgress:stagingProgress,stage:stage,beginWipe:beginWipe,step:step,verify:verify,syncTime:syncTime,activate:activate,confirm:confirm,inventoryPage:inventoryPage};

@@ -2,6 +2,40 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const core=require('../../apps/veranode/core.js'),runtime=require('../../apps/veranode/runtime.js');
 const {platform}=require('./helpers.cjs'),{Graphics}=require('./graphics.cjs');
 
+test('repeated maintenance transitions do not duplicate samples or restart HRM; failed resume stays paused',()=>{
+ const f=platform(core),node=runtime.create(f.env);node.start();
+ node.pauseRecording(true);const high=node.samples.next,power=f.power.length;
+ node.pauseRecording(true);assert.equal(f.power.length,power);
+ f.env.hrm=on=>{if(on)return false;};
+ assert.throws(()=>node.pauseRecording(false),/non riavviato/);
+ assert.equal(node.health().maintenancePaused,true);assert.equal(node.health().hrmRequested,false);
+ assert.equal(node.samples.next,high);
+ f.env.hrm=on=>{f.power.push(on);return on;};node.pauseRecording(false);
+ const resumed=node.samples.next,calls=f.power.length;
+ node.pauseRecording(false);assert.equal(node.samples.next,resumed);assert.equal(f.power.length,calls);
+ assert.equal(resumed,high+1);node.dispose();
+});
+
+test('disconnect cancels queued BLE notification but offline acquisition continues',async()=>{
+ const f=platform(core),node=runtime.create(f.env);node.start();await Promise.resolve();
+ f.bus.emit('connect');f.bus.emit('HRM',{bpm:72,confidence:99});
+ const withNotification=f.clock.timers.size;
+ f.bus.emit('disconnect');assert.equal(f.clock.timers.size,withNotification-1);
+ const high=node.samples.next,sent=f.sent.length;
+ f.clock.advance(60000);await Promise.resolve();
+ assert.equal(f.sent.length,sent);assert.equal(node.samples.next,high+2);node.dispose();
+});
+
+test('a pressure reply from before maintenance cannot contaminate resumed sensor state',async()=>{
+ const f=platform(core),pending=[];f.env.pressure=()=>new Promise(resolve=>pending.push(resolve));
+ const node=runtime.create(f.env);node.start();node.pauseRecording(true);
+ pending[0]({temperature:99});await Promise.resolve();
+ assert.equal(node.health().temperatureReads,0);assert.equal(node.state.values.temperatura,undefined);
+ node.pauseRecording(false);assert.equal(pending.length,2);
+ pending[1]({temperature:23});await Promise.resolve();
+ assert.equal(node.state.values.temperatura.value,23);node.dispose();
+});
+
 test('failed HRM startup rolls back flag, listeners and timers, and permits a clean retry',()=>{
  const f=platform(core);let fail=true;
  f.env.hrm=on=>{if(on&&fail)throw Error('HRM unavailable');f.power.push(on);};

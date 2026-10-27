@@ -128,6 +128,19 @@ test('confirmation cannot claim physical sensor samples, and refuses a stopped c
  assert.throws(()=>f.p.confirm(binding),/Riavvio/);f.context.global.VeraZeroBootGeneration=binding.generation;f.context.global.VeraZeroBootExecutionId=binding.executionId;assert.throws(()=>f.p.confirm(binding),/raccolta/);f.health={running:true,scheduled:true,hrmRequested:true,sampleCount:0};const result=f.p.confirm(binding);assert.equal(result.softwareReady,true);assert.equal(result.sensorSamplesVerified,false);assert.equal(result.clockVerified,false);
 });
 
+test('repeated completed confirmation is read-only and low battery uses the same strict gate as Mobile',()=>{
+ const f=fixture();f.finish();const before=f.mutations,digest=f.p.status().checkpointDigest;
+ for(let i=0;i<4;i++)assert.equal(f.p.confirm(binding).softwareReady,true);
+ assert.equal(f.mutations,before);assert.equal(f.p.status().checkpointDigest,digest);
+ for(const charge of [0,49,50,101]){
+  const low=fixture();low.battery=charge;low.p.setConsent(true);
+  assert.throws(()=>low.p.prepare(binding,low.env.checkpointDigest()),/oltre il 50/);
+  assert.equal(low.p.status().wipeConsumed,false);
+ }
+ const ready=fixture();ready.battery=51;ready.p.setConsent(true);
+ assert.equal(ready.p.prepare(binding,ready.env.checkpointDigest()).phase,'prepared');
+});
+
 
 test('interrupted StorageFile erasure removes remaining numbered chunks after chunk one is already gone',()=>{
  const base=fixture();for(let i=1;i<=4;i++)base.sfChunks.set('large'+String.fromCharCode(i),'chunk'+i);

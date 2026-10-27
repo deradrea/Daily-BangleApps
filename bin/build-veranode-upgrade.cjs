@@ -18,7 +18,10 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  const sidecar=[['veram.provider.js','provider.js'],['veram.platform.js','platform.js'],['veram.0.boot.js','guard.js'],['veram.app.js','app.js']].map(([name,src])=>{
   const bytes=committed('maintenance/veranode/'+src);acorn.parse(bytes.toString('utf8'),{ecmaVersion:2015});return {name,size:bytes.length,sha256:hash(bytes),base64:bytes.toString('base64')};
  });
- const target=packages[1],rows=files=>files.map(({name,size,sha256})=>({name,size,sha256}));
+ const selectionSource=committed('bin/veranode-runtime-selection.cjs');
+ if(!fs.readFileSync(path.join(root,'bin/veranode-runtime-selection.cjs')).equals(selectionSource))throw Error('Runtime selector differs from canonical source');
+ const target=require('./veranode-runtime-selection.cjs').select(committed),rows=files=>files.map(({name,size,sha256})=>({name,size,sha256}));
+ if(!packages.some(p=>p.packageSha256===target.packageSha256))packages.push(target);
  const bootupdate=committed('apps/boot/bootupdate.js'),bootloader=committed('apps/boot/bootloader.js');
  const crlf=bytes=>Buffer.from(bytes.toString('utf8').replace(/\r?\n/g,'\r\n'));
  const variants=bytes=>[...new Set([hash(bytes),hash(crlf(bytes))])];

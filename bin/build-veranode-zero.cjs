@@ -27,6 +27,11 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  if(options.targetProfile!==undefined&&!dedicated)throw Error('Unsupported target profile');
  let releaseConfig,target=structuredClone(parent.target.files);
  if(dedicated){
+  const selectionSource=committed('bin/veranode-runtime-selection.cjs');
+  if(!fs.readFileSync(path.join(root,'bin/veranode-runtime-selection.cjs')).equals(selectionSource))throw Error('Runtime selector differs from canonical source');
+  const runtime=require('./veranode-runtime-selection.cjs').select(committed);
+  target=target.map(f=>runtime.files.find(r=>r.name===f.name)||f);
+  parent.runtimePackageSha256=runtime.packageSha256;
   releaseConfig=JSON.parse(committed('initialization/zero/dedicated-release.json'));
   validateDedicatedRelease(releaseConfig);
   const helper=committed('bin/veranode-dedicated-target.cjs');

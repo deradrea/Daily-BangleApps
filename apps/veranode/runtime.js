@@ -82,7 +82,7 @@ exports.create = function(env) {
     changed();
   }
   function notify() {
-    if (!state.connected || disposed) return;
+    if (!state.connected || disposed || !state.running || state.maintenancePaused) return;
     if (lastNotify > clock.now()) lastNotify = clock.now() - 1000;
     var wait = 1000 - (clock.now() - lastNotify);
     if (wait > 0) {
@@ -226,7 +226,12 @@ exports.create = function(env) {
         typeof value.bpm === "number" && isFinite(value.bpm) && value.bpm > 0 && value.bpm <= 65535) ingest("battito", value.bpm, value.confidence);
   }
   function connected() { state.connected = true; lastNotify = 0; notify(); changed(); }
-  function disconnected() { state.connected = false; state.peerName = null; changed(); }
+  function disconnected() {
+    state.connected = false; state.peerName = null;
+    if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
+    notifyTimer = undefined;
+    changed();
+  }
   function start() {
     if (state.running || disposed) return;
     if (env.progress) env.progress("Sensori", 0, 0);
@@ -268,10 +273,24 @@ exports.create = function(env) {
   // This neither erases data nor releases the management/UI listeners.
   function pauseRecording(paused) {
     if (disposed) throw new Error("Software non attivo");
-    state.maintenancePaused = paused === true;
-    var on = !state.maintenancePaused && state.running;
-    sensorHealth.hrmRequested = env.hrm(on) !== false && on;
-    if (!state.maintenancePaused && state.running) tick();
+    var next = paused === true;
+    if ((state.maintenancePaused === true) === next) return;
+    if (next) {
+      state.maintenancePaused = true;
+      pressureGeneration++; pendingPressure = false;
+      if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
+      pressureTimer = undefined;
+      if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
+      notifyTimer = undefined;
+      sensorHealth.hrmRequested = false;
+      env.hrm(false);
+    } else {
+      // A failed resume must remain visibly paused, with no false running proof.
+      if (state.running && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+      sensorHealth.hrmRequested = state.running;
+      state.maintenancePaused = false;
+      if (state.running) tick();
+    }
     changed();
   }
   function dispose() {

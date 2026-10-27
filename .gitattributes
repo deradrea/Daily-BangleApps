@@ -17,3 +17,5 @@ bin/build-veranode-zero.cjs -text
 dist/veranode-zero/** -text
 
 bin/veranode-dedicated-target.cjs -text
+bin/veranode-runtime-selection.cjs -text
+releases/veranode-runtime.json -text
