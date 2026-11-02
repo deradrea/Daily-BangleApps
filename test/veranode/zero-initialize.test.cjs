@@ -243,3 +243,10 @@ test('feedback coalesces transfer redraws, aligns completed bytes and preserves 
  d.set('upload',136070,136070);f.intervals[0]();assert.ok(f.drawn.includes('133 / 133 kB'));
  d.set('error',0,0,'');assert.ok(f.drawn.includes('Procedura conservata'));assert.ok(f.drawn.includes('Riprendi dalla app'));
 });
+
+
+test('preflight respects the complete package reservation before any new checkpoint',()=>{
+ const f=fixture('factory',payload,'app-confirmed');f.env.target.minimumFreeBytes=400000;
+ const before=f.mutations;f.free=399999;assert.throws(()=>f.p.prepare(binding,f.env.checkpointDigest()),/Spazio insufficiente/);assert.equal(f.mutations,before);
+ f.free=400000;assert.equal(f.p.prepare(binding,f.env.checkpointDigest()).phase,'prepared');
+});
