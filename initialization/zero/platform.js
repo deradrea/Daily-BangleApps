@@ -5,7 +5,19 @@ exports.create=function(){
   var bootEntries=['.varimg','.bootcde','.bootrst','.boot3','.boot2','.boot1','.bootPowerOn','.boot0'];
   var cleanupBootEntries=['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst'];
   var names=['vz.provider.js','vz.platform.js','vz.recovery.js','vz.app.js','vz.display.js','0vz.boot.js','vz.target.js','vz.state0','vz.state1'];
-  function hash(x){var a=new Uint8Array(c.SHA256(x)),v='';for(var i=0;i<a.length;i++)v+=('0'+a[i].toString(16)).slice(-2);return v;}
+  // Espruino 2v29 copies non-contiguous Storage strings onto the stack.
+  // Retry only that allocation error with identical bytes in a flat heap string.
+  // Keep this in the persistent adapter: it also runs after a recovery boot.
+  function hash(x){
+    var digest;
+    try{digest=c.SHA256(x);}catch(err){
+      if(String(err)!=='Error: Not enough stack memory for data'||typeof x!=='string')throw err;
+      var flat=E.toFlatString(x);
+      if(flat===undefined)throw Error('Memoria temporanea insufficiente per SHA-256; ripresa conservata');
+      digest=c.SHA256(flat);
+    }
+    var a=new Uint8Array(digest),v='';for(var i=0;i<a.length;i++)v+=('0'+a[i].toString(16)).slice(-2);return v;
+  }
   function canonical(x){if(Array.isArray(x))return '['+x.map(canonical).join(',')+']';if(x&&typeof x==='object')return '{'+Object.keys(x).sort().map(function(k){return JSON.stringify(k)+':'+canonical(x[k]);}).join(',')+'}';return JSON.stringify(x);}
   function own(n){if(names.includes(n))return true;return t.files.some(function(_f,i){return n==='vz.f'+i;});}
   function temporaryBoot(n){return bootEntries.includes(n)&&n!=='.varimg';}
