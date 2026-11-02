@@ -15,3 +15,15 @@ test('preserving upgrade retains the previous canonical deployed runtime among a
  const previous='dist/veranode/veranode-0.2.0-dev-f4f3226f8bca4f26/package.json';
  assert.ok(builder.includes(previous));assert.ok(builder.includes(hash(fs.readFileSync(path.join(root,previous)))));
 });
+
+test('new initialization and preserving upgrade resolve the same canonical runtime and retain deployed source',()=>{
+ const os=require('node:os'),out=fs.mkdtempSync(path.join(os.tmpdir(),'vera-display-release-'));
+ const init=require('../../bin/build-veranode-zero.cjs').build(path.join(out,'zero'),{targetProfile:'veranode-only'});
+ const upgrade=require('../../bin/build-veranode-upgrade.cjs').build(path.join(out,'upgrade'));
+ const selected=require('../../releases/veranode-runtime.json');
+ assert.equal(init.bundle.runtimeRevision,selected.revision);assert.equal(init.bundle.runtimePackageSha256,selected.sha256);
+ assert.equal(upgrade.plan.target.revision,selected.revision);assert.equal(upgrade.plan.target.packageSha256,selected.sha256);
+ assert.ok(upgrade.plan.sources.some(s=>s.revision==='veranode-0.2.0-dev-f4f3226f8bca4f26'));
+ for(const f of upgrade.plan.target.files)assert.deepEqual(init.bundle.target.files.find(v=>v.name===f.name),f);
+ assert.equal(upgrade.plan.preserveSamples,true);assert.equal(upgrade.plan.preserveProfile,true);assert.equal(upgrade.plan.eraseAllowed,false);
+});
