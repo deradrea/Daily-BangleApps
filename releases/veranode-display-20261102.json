@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "date": "2026-11-02",
+  "sourceCommit": "c1a107c05",
+  "runtime": {
+    "revision": "veranode-0.2.0-dev-1ab4c48d08d2890d",
+    "path": "dist/veranode/veranode-0.2.0-dev-1ab4c48d08d2890d/package.json",
+    "sha256": "63adcc01e7c114339961f468a524239c2176434c3a13d069059f30b52352a8c0"
+  },
+  "upgrade": {
+    "revision": "veranode-upgrade-1-012fa9edb08c45c4",
+    "sha256": "012fa9edb08c45c48014e746749bb52c46b871e56ff31a3c1f1fa1e920d732b3",
+    "size": 207026
+  },
+  "initialize": {
+    "revision": "veranode-zero-1-f543c527f7f09670",
+    "sha256": "f543c527f7f096706f55602fd53de784078bac6118765645a9246e6696f66273",
+    "size": 238805
+  },
+  "watchTestsPassed": 276,
+  "physicalValidation": "not-performed-in-this-release",
+  "offline24h": "suspended"
+}
