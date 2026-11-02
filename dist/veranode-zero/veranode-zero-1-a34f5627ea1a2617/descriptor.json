@@ -1,0 +1,34 @@
+{
+  "schema": "vera-bangle-zero-descriptor/1",
+  "revision": "veranode-zero-1-a34f5627ea1a2617",
+  "sha256": "a34f5627ea1a26178fe1f2092c9451f309c40fe4b56b68c6a6e47c00b714dee7",
+  "size": 241993,
+  "board": "BANGLEJS2",
+  "firmware": [
+    "2v29"
+  ],
+  "mode": "zero-initialization",
+  "protocol": 1,
+  "authorization": {
+    "enforcement": "consumer",
+    "deviceVerified": false,
+    "physicalConsent": false,
+    "confirmationSource": "app",
+    "encryptedBle": true
+  },
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "sourceCommit": "fa5682c0665b6c23c3aa8f9e80774c3bb0d02868",
+  "sourceManifestSha256": "f1fc6926eaa1eff3c212134196bcce7d9420e702c13fefcf9c4312ba1161f99b",
+  "targetFingerprint": "2a58e379f2432999e55a52508d4be2673cdf97247407973c583550450c36db1c",
+  "targetProfile": "veranode-only",
+  "executionEnabled": true,
+  "executionPolicy": {
+    "scope": "server-authorized-initialization",
+    "allowedRoles": [
+      "super_admin",
+      "platform_admin"
+    ],
+    "requiresDeviceBinding": true
+  },
+  "hardwareValidated": false
+}
