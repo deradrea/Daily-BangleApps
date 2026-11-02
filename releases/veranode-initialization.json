@@ -1,0 +1,20 @@
+{
+  "schema": "vera-node-initialization-selection/1",
+  "status": "published-package",
+  "revision": "veranode-zero-1-f543c527f7f09670",
+  "path": "dist/veranode-zero/veranode-zero-1-f543c527f7f09670/initialize.json",
+  "sha256": "f543c527f7f096706f55602fd53de784078bac6118765645a9246e6696f66273",
+  "sourceCommit": "c1a107c053c6365d015aa7333191946d31f67d2b",
+  "runtimeRevision": "veranode-0.2.0-dev-1ab4c48d08d2890d",
+  "runtimePackageSha256": "63adcc01e7c114339961f468a524239c2176434c3a13d069059f30b52352a8c0",
+  "board": "BANGLEJS2",
+  "firmware": [
+    "2v29"
+  ],
+  "installationMode": "zero-initialization",
+  "requiresMobilePackageSupport": true,
+  "promoteBackendCatalog": false,
+  "hardwareTestPerformed": false,
+  "minimumMobileVersion": "1.0.157",
+  "distributionPolicy": "initialization-from-zero-after-user-factory-reset"
+}

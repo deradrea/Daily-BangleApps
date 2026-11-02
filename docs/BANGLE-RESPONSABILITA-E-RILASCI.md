@@ -45,3 +45,22 @@ la correzione e la pubblicazione di una nuova revisione.
 I rilasci mantengono il JSON concordato e preservano dati e profilo secondo
 il tipo di operazione. Pubblicare un pacchetto non autorizza automaticamente
 formattazioni o altre operazioni distruttive sui dispositivi.
+
+## Ciclo corrente — 2 novembre 2026
+
+Decisione utente: sviluppare e distribuire prima i pacchetti completi Vera Node,
+poi inizializzare da zero dopo ripristino di fabbrica eseguito dall'utente.
+Aggiornamenti preservanti e repair/recovery sono sospesi; nessuna scadenza,
+pratica o backup esistente viene modificato per adottare questo ciclo.
+Il collaudo24h resta sospeso.
+
+`releases/veranode-runtime.json` seleziona il runtime canonico;
+`releases/veranode-initialization.json` identifica il pacchetto completo che lo
+include e la versione minima Mobile che lo riconosce. Il catalogo Web viene
+allineato solo dopo la distribuzione del client compatibile. I vecchi asset
+restano immutabili. Un nuovo sviluppo richiede nuova revisione e nuovi hash.
+
+La release zero-f543 include runtime1ab4 e richiede Mobile1.0.157. Ricostruzione
+da commit e download GitHub confrontati byte per byte; test Mobile/runtime e
+inizializzazione completa in Espruino2v29 passati. Queste prove non attestano
+un'installazione sul Bangle fisico.
