@@ -1,10 +1,10 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "published-package",
-  "revision": "veranode-zero-1-f543c527f7f09670",
-  "path": "dist/veranode-zero/veranode-zero-1-f543c527f7f09670/initialize.json",
-  "sha256": "f543c527f7f096706f55602fd53de784078bac6118765645a9246e6696f66273",
-  "sourceCommit": "c1a107c053c6365d015aa7333191946d31f67d2b",
+  "status": "package-validated-awaiting-client",
+  "revision": "veranode-zero-1-97c1c49395f1698e",
+  "path": "dist/veranode-zero/veranode-zero-1-97c1c49395f1698e/initialize.json",
+  "sha256": "97c1c49395f1698e68414406503b1834b9dcf5a6b4bc86e2daf2a66a0949f6b7",
+  "sourceCommit": "20c19d6fff01c018c047b3a0b3f71a1bd4fb828d",
   "runtimeRevision": "veranode-0.2.0-dev-1ab4c48d08d2890d",
   "runtimePackageSha256": "63adcc01e7c114339961f468a524239c2176434c3a13d069059f30b52352a8c0",
   "board": "BANGLEJS2",
@@ -15,6 +15,6 @@
   "requiresMobilePackageSupport": true,
   "promoteBackendCatalog": false,
   "hardwareTestPerformed": false,
-  "minimumMobileVersion": "1.0.158",
+  "minimumMobileVersion": "1.0.159",
   "distributionPolicy": "initialization-from-zero-after-user-factory-reset"
 }
