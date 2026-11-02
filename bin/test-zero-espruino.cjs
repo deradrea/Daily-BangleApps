@@ -34,6 +34,7 @@ async function main(){
  value('(function(){global.stockRemoved=false;Bangle.setUI({mode:"custom",remove:function(){global.stockRemoved=true;}});return true;})()');
  const feedback=value(pkg.feedbackBootstrapExpression);assert.equal(feedback.feedbackReady,true);assert.equal(feedback.visualVerified,false);assert.equal(value('global.stockRemoved'),true);
  const hold=value('Bangle.getOptions()');assert.equal(hold.lcdPowerTimeout,0);assert.equal(hold.backlightTimeout,0);assert.equal(hold.lockTimeout,0);
+ if(process.argv.includes('--bounded-crypto'))value('(function(){var c=require("crypto"),original=c.SHA256;global.maxHashInput=0;c.SHA256=function(v){maxHashInput=Math.max(maxHashInput,v.length);if(v.length>4096)throw Error("Hash exceeds bounded memory");return original(v);};E.toFlatString=function(){throw Error("Flat file allocation forbidden");};return true;})()');
  const fresh=value(pkg.uiBootstrapExpression);assert.equal(fresh.phase,'unprepared');assert.equal(fresh.targetFiles,14);assert.equal(fresh.appUiReady,true);assert.equal(fresh.visualVerified,false);assert.equal(value('global.VeraZeroUiReady'),true);if(pkg.authorization.physicalConsent===false){assert.equal(fresh.authorizationMode,'app-confirmed');assert.equal(fresh.physicalConsentRequired,false);assert.equal(value('global.VeraZeroDisplay.canConsent()'),false);assert.equal(value('VeraZero.status().consent'),false);value('Bangle.emit("touch",1,{x:88,y:140})');assert.equal(value('VeraZero.status().consent'),false);}else{assert.equal(value('global.VeraZeroDisplay.canConsent()'),true);assert.equal(value('g.getPixel(12,160)'),2016);if(pkg.uiBootstrapExpression.includes('status.consentUi=')){assert.equal(fresh.consentUi.consentVisible,true);
  value('Bangle.emit("touch",1,{x:88,y:70})');assert.equal(value('VeraZero.status().consent'),false);
  value('Bangle.emit("touch",1,{x:88,y:140})');assert.equal(value('VeraZero.status().consent'),true);assert.equal(value('VeraZeroDisplay.status().consentVisible'),false);}}
@@ -64,7 +65,7 @@ async function main(){
      value('global.testZeroProvider=require("vz.provider.js").create(testZeroEnv)');
      if(providerSource.includes('function stagingProgress(')){
       value('testZeroProvider.recover('+JSON.stringify(binding)+')');
-      const saved=value('testZeroProvider.stagingProgress(1)');assert.equal(saved.offset,384);assert.equal(saved.prefixSha256,sha(data.subarray(0,384)));assert.equal(saved.verified,false);
+      const saved=value('testZeroProvider.stagingProgress(1)');assert.equal(saved.offset,384);if(pkg.integrity){const length=Buffer.alloc(4);length.writeUInt32BE(384);assert.equal(saved.prefixDigestAlgorithm,pkg.integrity.algorithm);assert.equal(saved.prefixDigest,sha(Buffer.concat([Buffer.from('VZP1'),length,crypto.createHash('sha256').update(data.subarray(0,384)).digest()])));}else assert.equal(saved.prefixSha256,sha(data.subarray(0,384)));assert.equal(saved.verified,false);
       value(expression); // Same acknowledged block is an idempotent replay.
       value('testZeroProvider.stage(1,384,'+data.length+','+JSON.stringify(data.subarray(384,768).toString('base64'))+')');
      }else{
@@ -77,7 +78,7 @@ async function main(){
   }
   if(nativeStaging){
    assert.equal(value('testZeroProvider.status().stagedFiles'),14);
-   const checks=value('(function(){var e=testZeroEnv;return e.target.files.map(function(f,i){var b=e.read("vz.f"+i);return b.length===f.size&&e.hash(b)===f.sha256;});})()');assert.deepEqual(checks,Array(14).fill(true));
+   const checks=value('(function(){var e=testZeroEnv;return e.target.files.map(function(f,i){var b=e.read("vz.f"+i);return b.length===f.size&&(e.matches?e.matches("vz.f"+i,f):e.hash(b)===f.sha256);});})()');assert.deepEqual(checks,Array(14).fill(true));
    // Native Storage, hashing, selective wipe/install and journal; radio/load and
    // collector health are substituted, so this is not a physical boot test.
    // EMSCRIPTEN2 reads the host clock: its setTime does not change getTime.
@@ -113,6 +114,6 @@ async function main(){
  const warm=value(pkg.uiBootstrapExpression);assert.equal(warm.targetFingerprint,pkg.target.fingerprint);assert.equal(warm.targetFiles,14);assert.equal(value('global.VeraZeroUiReady'),true);
  value('(function(){require("Storage").erase("vz.provider.js");return true;})()');const missing=rpc(pkg.uiBootstrapExpression);assert.match(missing.error,/Module "vz.provider.js" not found/);assert.equal(value('global.VeraZeroUiReady'),false);
  assert.equal(value('require("Storage").read("old.data")'),fullProtocol?undefined:'preserve');ctx.jsStopIdle();
- console.log(JSON.stringify({ok:true,interpreter:native,emulatorCommit:manifest.commit,packageSource:pkg.sourceCommit,nativeBindingPrepared:nativeBinding,nativeStagingVerified:nativeStaging,nativeProviderProtocolComplete:fullProtocol,checks:['original-d812-cache-error-reproduced','empty-cache-bootstrap','warm-cache-stale-target-reloaded','old-ui-released-and-lcd-held','missing-module-error-propagated','existing-data-preserved-before-wipe','invalid-bindings-rejected-without-checkpoint-write'].concat(nativeBinding?['valid-binding-prepared-and-native-journal-reloaded','same-intent-replay-idempotent',nativeStaging?'all-14-staged-files-hashed-and-partial-retry-verified':'legacy-staging-truncation-reproduced']:['legacy-counted-regexp-rejection-reproduced']).concat(fullProtocol?['native-storage-wipe-install-clock-activation-and-boot-guard-receipt']:[]),hardware:false,nodeRequireMock:false},null,2));
+ console.log(JSON.stringify({ok:true,interpreter:native,emulatorCommit:manifest.commit,packageSource:pkg.sourceCommit,nativeBindingPrepared:nativeBinding,nativeStagingVerified:nativeStaging,nativeProviderProtocolComplete:fullProtocol,checks:['original-d812-cache-error-reproduced','empty-cache-bootstrap','warm-cache-stale-target-reloaded','old-ui-released-and-lcd-held','missing-module-error-propagated','existing-data-preserved-before-wipe','invalid-bindings-rejected-without-checkpoint-write'].concat(nativeBinding?['valid-binding-prepared-and-native-journal-reloaded','same-intent-replay-idempotent',nativeStaging?'all-14-staged-files-hashed-and-partial-retry-verified':'legacy-staging-truncation-reproduced']:['legacy-counted-regexp-rejection-reproduced']).concat(fullProtocol?['native-storage-wipe-install-clock-activation-and-boot-guard-receipt']:[]),boundedCrypto:process.argv.includes('--bounded-crypto'),maxHashInput:process.argv.includes('--bounded-crypto')?value('maxHashInput'):null,hardware:false,nodeRequireMock:false},null,2));
 }
 main().then(()=>process.exit(0),error=>{console.error(error.stack||String(error));process.exit(1);});

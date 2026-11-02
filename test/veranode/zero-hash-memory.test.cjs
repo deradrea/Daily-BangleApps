@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),cp=require('node:child_process');
-const root=path.resolve(__dirname,'../..'),source=fs.readFileSync(path.join(root,'initialization/zero/platform.js'),'utf8');
+const root=path.resolve(__dirname,'../..'),source=Buffer.from(JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-zero/veranode-zero-1-97c1c49395f1698e/initialize.json'))).bootstrap.find(f=>f.name==='vz.platform.js').base64,'base64').toString();
 const sha=s=>crypto.createHash('sha256').update(s,'latin1').digest('hex');
 function adapter(options={}){
  let calls=0,flattened=0;

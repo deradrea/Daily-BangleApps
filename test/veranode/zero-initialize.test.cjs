@@ -1,6 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm'),path=require('path'),crypto=require('crypto');
 const root=path.resolve(__dirname,'../..'),dir=path.join(root,'initialization/zero');
 const hash=x=>crypto.createHash('sha256').update(Buffer.from(x,'latin1')).digest('hex');
+const prefixHash=b=>{const bytes=Buffer.from(b,'latin1'),length=Buffer.alloc(4);length.writeUInt32BE(bytes.length);const parts=[Buffer.from('VZP1'),length];for(let at=0;at<bytes.length;at+=1024)parts.push(crypto.createHash('sha256').update(bytes.subarray(at,at+1024)).digest());return crypto.createHash('sha256').update(Buffer.concat(parts)).digest('hex');};
 const parent=JSON.parse(fs.readFileSync(path.join(root,'dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json')));
 const payload=Object.fromEntries(parent.target.files.map(f=>[f.name,f.name==='setting.json'?'{"clock":"veranode.app.js","clockHasWidgets":false}':'new:'+f.name]));
 const target={files:Object.entries(payload).map(([name,b])=>({name,size:b.length,sha256:hash(b)}))};target.stagingBytes=Object.values(payload).reduce((n,b)=>n+b.length,0);target.fingerprint=hash(JSON.stringify(target.files));
@@ -10,7 +11,7 @@ test('staging resumes a verified prefix after reboot without rewriting acknowled
  f.p.prepare(binding,f.env.checkpointDigest());const index=Object.keys(contents).indexOf('.bootcde'),bytes=contents['.bootcde'];
  const first=Buffer.from(bytes.slice(0,384)).toString('base64');
  f.p.stage(index,0,bytes.length,first);assert.equal(f.files.get('vz.f'+index).length,1304);
- f.reboot();f.p.recover(binding);const progress=f.p.stagingProgress(index);assert.equal(progress.offset,384);assert.equal(progress.prefixSha256,hash(bytes.slice(0,384)));assert.equal(progress.verified,false);
+ f.reboot();f.p.recover(binding);const progress=f.p.stagingProgress(index);assert.equal(progress.offset,384);assert.equal(progress.prefixDigest,prefixHash(bytes.slice(0,384)));assert.equal(progress.verified,false);
  const mutations=f.mutations;f.p.stage(index,0,bytes.length,first);assert.equal(f.mutations,mutations,'lost ACK replay is read-only');
  assert.throws(()=>f.p.stage(index,0,bytes.length,Buffer.from('wrong').toString('base64')),/non corrispondente/);
  for(let offset=progress.offset;offset<bytes.length;offset+=384)f.p.stage(index,offset,bytes.length,Buffer.from(bytes.slice(offset,offset+384)).toString('base64'));
@@ -22,7 +23,7 @@ test('staging power loss before or after checkpoint returns only a verified reus
   const contents={...payload,'.bootcde':'a'.repeat(384)+'b'.repeat(384)+'c'.repeat(536)},f=fixture('factory',contents,'app-confirmed'),index=Object.keys(contents).indexOf('.bootcde'),bytes=contents['.bootcde'];
   f.p.prepare(binding,f.env.checkpointDigest());f.p.stage(index,0,bytes.length,Buffer.from(bytes.slice(0,384)).toString('base64'));
   f.crash=cut;assert.throws(()=>f.p.stage(index,384,bytes.length,Buffer.from(bytes.slice(384,768)).toString('base64')),/power lost/);
-  f.reboot();f.p.recover(binding);const progress=f.p.stagingProgress(index);assert.equal(progress.offset,cut===1?384:768);assert.equal(progress.prefixSha256,hash(bytes.slice(0,progress.offset)));
+  f.reboot();f.p.recover(binding);const progress=f.p.stagingProgress(index);assert.equal(progress.offset,cut===1?384:768);assert.equal(progress.prefixDigest,prefixHash(bytes.slice(0,progress.offset)));
   for(let offset=progress.offset;offset<bytes.length;offset+=384)f.p.stage(index,offset,bytes.length,Buffer.from(bytes.slice(offset,offset+384)).toString('base64'));
   assert.equal(f.files.get('vz.f'+index),bytes);assert.equal(f.p.status().wipeConsumed,false);
  }
@@ -32,9 +33,10 @@ function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  const files=new Map([['.boot0','old boot'],['.bootcde','unknown loader'],['.boot1','alternate'],['.varimg','old image'],['bootupdate.js','old update'],['foreign.app.js','old app'],['setting.json','old settings']]),sf=new Map(),sfChunks=new Map(),log=[],feedback=[],timers=[],intervals=[],drawn=[];
  if(mode==='vera'){files.set('veranode.core.js','old Vera');files.set('veranode.policy.json','old policy');sf.set('veranode.s0','sample-data');}
  if(mode==='partial'){files.set('verai.state0','broken legacy checkpoint');files.set('verai.plan','old plan');files.set('verai.f0','partial');files.set('veram.state1','old upgrade');sf.set('veranode.s0','old samples');}
- const sources=[['vz.provider.js','provider.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
+ const sources=[['vz.provider.js','provider.js'],['vz.integrity.js','integrity.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
  for(const [name,source]of sources)files.set(name,fs.readFileSync(path.join(dir,source),'utf8'));
  const localTarget={...target,authorizationMode:authorizationMode,supportFiles:sources.map(([name])=>({name,size:files.get(name).length,sha256:hash(files.get(name))}))};
+ localTarget.integrity=require('../../bin/build-veranode-zero.cjs').createBlockIntegrity([...sources.map(([name])=>({name,base64:Buffer.from(files.get(name),'latin1').toString('base64')})),...Object.entries(payload).map(([name,b])=>({name,base64:Buffer.from(b,'latin1').toString('base64')}))]);
  files.set('vz.target.js','exports='+JSON.stringify(localTarget)+';');
  let context,env,provider,crashAt=0,mutations=0,battery=99,free=10000000,encrypted=true,firmware='2v29',health=null,clockMs=1800000000000;
  function mutate(kind,name,fn){fn();log.push({kind,name});mutations++;if(crashAt&&mutations===crashAt){crashAt=0;throw Error('power lost after '+kind+':'+name);}}
@@ -47,7 +49,7 @@ function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  function boot(isolated){
   const cache={};const global={};if(isolated)global.VeraZeroRecovery=true;
   const load=n=>{if(n==='vz.target.js')return localTarget;if(n==='Storage')return storage;if(n==='crypto')return {SHA256:b=>crypto.createHash('sha256').update(Buffer.from(b,'latin1')).digest()};if(cache[n])return cache[n];const code=files.get(n);if(code===undefined)throw Error('Module absent '+n);const module={exports:{}};context.__module=module;vm.runInContext('(function(exports){'+code+'\n})(__module.exports)',context);return cache[n]=module.exports;};
-  context=vm.createContext({global,require:load,exports:{},Uint8Array,Number:{},getTime:()=>clockMs/1000,setTime:sec=>{clockMs=sec*1000;},process:{env:{BOARD:'BANGLEJS2',VERSION:firmware}},NRF:{getAddress:()=>binding.mac+' random',getSecurityStatus:()=>({connected:true,encrypted,bonded:encrypted}),startBonding:()=>Promise.resolve(),setServices:()=>{},on:()=>{}},Bluetooth:{setConsole:()=>{}},E:{getBattery:()=>battery,showMessage:s=>drawn.push(s)},Bangle:bangle,g:graphics,atob:s=>Buffer.from(s,'base64').toString('latin1'),setTimeout:fn=>{timers.push(fn);return timers.length;},setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval:()=>{}});
+  context=vm.createContext({global,require:load,exports:{},Uint8Array,Number:{},getTime:()=>clockMs/1000,setTime:sec=>{clockMs=sec*1000;},process:{env:{BOARD:'BANGLEJS2',VERSION:firmware}},NRF:{getAddress:()=>binding.mac+' random',getSecurityStatus:()=>({connected:true,encrypted,bonded:encrypted}),startBonding:()=>Promise.resolve(),setServices:()=>{},on:()=>{}},Bluetooth:{setConsole:()=>{}},E:{getBattery:()=>battery,showMessage:s=>drawn.push(s),toString:b=>Buffer.from(b).toString('latin1')},Bangle:bangle,g:graphics,atob:s=>Buffer.from(s,'base64').toString('latin1'),setTimeout:fn=>{timers.push(fn);return timers.length;},setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval:()=>{}});
   global.load=()=>{};env=load('vz.platform.js').create();const progress=env.progress;env.progress=(...p)=>{feedback.push(p);progress(...p);};env.health=()=>health;provider=load('vz.provider.js').create(env);var st=provider.status();if(st.phase==='activation-pending'||st.phase==='complete'){global.VeraZeroBootGeneration=st.binding.generation;global.VeraZeroBootExecutionId=st.binding.executionId;}
  }
  boot(false);

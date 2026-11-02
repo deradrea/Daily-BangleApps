@@ -30,7 +30,7 @@ exports.create=function(e){
   function paint(){if(state)e.progress(state.phase,state.phase==='wiping'?state.removed:state.phase==='installing'?state.installed:state.phase==='quarantining'?state.armed:state.staged.length,state.phase==='wiping'?state.wipeTotal:state.phase==='quarantining'?e.bootEntries.length:state.phase==='installing'?e.target.files.length-1:e.target.files.length);}
   function file(i){if(!integer(i)||i<0||i>=e.target.files.length)fail('File target non previsto');return e.target.files[i];}
   function stageName(i){return 'vz.f'+i;}
-  function matches(n,f){var b=e.read(n);return typeof b==='string'&&b.length===f.size&&e.hash(b)===f.sha256;}
+  function matches(n,f){if(e.matches)return e.matches(n,f);var b=e.read(n);return typeof b==='string'&&b.length===f.size&&e.hash(b)===f.sha256;}
   function staged(){if(stagedVerified)return;if(state.staged.length!==e.target.files.length||e.target.files.some(function(f,i){return !matches(stageName(i),f);}))fail('Staging incompleto o corrotto');stagedVerified=true;}
   function status(){return {protocol:1,stagingResume:'verified-prefix-v1',authorizationMode:appConfirmed?'app-confirmed':'physical-device',physicalConsentRequired:!appConfirmed,binding:state&&state.binding,phase:loadError?'checkpoint-error':state?state.phase:'unprepared',checkpointDigest:e.checkpointDigest(),targetFingerprint:e.target.fingerprint,stagedFiles:state?state.staged.length:0,targetFiles:e.target.files.length,wipeConsumed:!!state&&state.wipeConsumed,removed:state&&state.removed||0,wipeTotal:state&&state.wipeTotal||0,installed:state?(state.installed+(state.bootCommitted?1:0)):0,clockInitialized:!!state&&!!state.clock,consent:consent,isolated:e.isolated(),softwareReady:!!state&&state.phase==='complete',error:loadError};}
   function inspect(){var info=e.inspect();info.checkpointDigest=e.checkpointDigest();info.status=status();return info;}
@@ -50,7 +50,8 @@ exports.create=function(e){
     bound();if(!['prepared','staging'].includes(state.phase)||state.wipeConsumed)fail('Ripresa caricamento non prevista');
     var f=file(index),verified=state.staged.includes(index)&&matches(stageName(index),f),b=e.read(stageName(index)),offset=verified?f.size:state.upload&&state.upload.index===index?state.upload.next:0;
     if(offset&&(!b||b.length<offset))fail('Blocco persistente non leggibile');
-    return {binding:state.binding,targetFingerprint:e.target.fingerprint,index:index,verified:verified,offset:offset,prefixSha256:e.hash(offset?b.slice(0,offset):'')};
+    var result={binding:state.binding,targetFingerprint:e.target.fingerprint,index:index,verified:verified,offset:offset};
+    if(e.prefixDigest){var digest=e.prefixDigest(stageName(index),offset);result.prefixDigestAlgorithm=digest.prefixDigestAlgorithm;result.prefixDigest=digest.prefixDigest;}else result.prefixSha256=e.hash(offset?b.slice(0,offset):'');return result;
   }
   function stage(index,offset,total,base64){
     bound();if(['activating','activation-pending','complete'].includes(state.phase))fail('Caricamento non previsto');

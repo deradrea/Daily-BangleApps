@@ -4,20 +4,9 @@ exports.create=function(){
   var raw=global.VeraZeroRawRead||global.VeraInitializeRead||global.VeraMaintenanceStorageRead||s.read.bind(s);
   var bootEntries=['.varimg','.bootcde','.bootrst','.boot3','.boot2','.boot1','.bootPowerOn','.boot0'];
   var cleanupBootEntries=['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst'];
-  var names=['vz.provider.js','vz.platform.js','vz.recovery.js','vz.app.js','vz.display.js','0vz.boot.js','vz.target.js','vz.state0','vz.state1'];
-  // Espruino 2v29 copies non-contiguous Storage strings onto the stack.
-  // Retry only that allocation error with identical bytes in a flat heap string.
-  // Keep this in the persistent adapter: it also runs after a recovery boot.
-  function hash(x){
-    var digest;
-    try{digest=c.SHA256(x);}catch(err){
-      if(String(err)!=='Error: Not enough stack memory for data'||typeof x!=='string')throw err;
-      var flat=E.toFlatString(x);
-      if(flat===undefined)throw Error('Memoria temporanea insufficiente per SHA-256; ripresa conservata');
-      digest=c.SHA256(flat);
-    }
-    var a=new Uint8Array(digest),v='';for(var i=0;i<a.length;i++)v+=('0'+a[i].toString(16)).slice(-2);return v;
-  }
+  var names=['vz.provider.js','vz.integrity.js','vz.platform.js','vz.recovery.js','vz.app.js','vz.display.js','0vz.boot.js','vz.target.js','vz.state0','vz.state1'];
+  var integrity=require('vz.integrity.js').create(c,raw,t.integrity);
+  var hash=integrity.hash;
   function canonical(x){if(Array.isArray(x))return '['+x.map(canonical).join(',')+']';if(x&&typeof x==='object')return '{'+Object.keys(x).sort().map(function(k){return JSON.stringify(k)+':'+canonical(x[k]);}).join(',')+'}';return JSON.stringify(x);}
   function own(n){if(names.includes(n))return true;return t.files.some(function(_f,i){return n==='vz.f'+i;});}
   function temporaryBoot(n){return bootEntries.includes(n)&&n!=='.varimg';}
@@ -36,8 +25,8 @@ exports.create=function(){
   function erase(f){if(own(f.name)||temporaryBoot(f.name))throw Error('Supporto recupero protetto');if(f.kind==='normal'){s.erase(f.name);return;}if(f.kind!=='storage-chunk')throw Error('Tipo cancellazione non previsto');if(!streamChunks(f.name).length)return;s.open(f.name,'r').erase();streamChunks(f.name).forEach(function(n){s.erase(n);});if(streamChunks(f.name).length)throw Error('Archivio non rimosso');}
   function securityStatus(){var st=NRF.getSecurityStatus();return {connected:!!st.connected,encrypted:!!st.encrypted,bonded:!!st.bonded};}
   function requestSecurity(){var st=securityStatus();if(!st.connected)throw Error('Bluetooth scollegato');if(!st.encrypted){if(typeof NRF.startBonding!=='function')throw Error('Associazione non disponibile');NRF.startBonding(false).then(function(){},function(){});}return securityStatus();}
-  return {unbase64:atob,target:t,hash:hash,canonical:canonical,read:raw,write:write,load:load,save:save,replace:replace,checkpointDigest:checkpointDigest,currentBinding:function(){var st=load();return st&&st.binding;},
-    supportIntact:function(){return t.supportFiles.every(function(f){var b=raw(f.name);return typeof b==='string'&&b.length===f.size&&hash(b)===f.sha256;});},
+  return {unbase64:atob,target:t,hash:hash,matches:integrity.matches,prefixDigest:integrity.prefix,canonical:canonical,read:raw,write:write,load:load,save:save,replace:replace,checkpointDigest:checkpointDigest,currentBinding:function(){var st=load();return st&&st.binding;},
+    supportIntact:function(){return t.supportFiles.every(function(f){return integrity.matches(f.name,f);});},
     bootEntries:bootEntries,cleanupBootEntries:cleanupBootEntries,arm:arm,inventory:inventory,countRemovable:function(){return removable().length;},nextRemovable:function(){return removable()[0];},exists:exists,erase:erase,
     unexpected:function(){return inventory().some(function(f){return f.kind!=='normal'||(!own(f.name)&&!temporaryBoot(f.name)&&!t.files.some(function(x){return x.name===f.name;}));});},
     inspect:function(){return {board:process.env.BOARD,firmware:process.env.VERSION,mac:NRF.getAddress().split(' ')[0].toUpperCase(),batteryPercent:E.getBattery(),freeBytes:s.getStats().freeBytes,compatible:process.env.BOARD==='BANGLEJS2'&&process.env.VERSION==='2v29'};},

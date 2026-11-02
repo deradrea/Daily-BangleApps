@@ -8,6 +8,7 @@ function validateDedicatedRelease(config){
  return config;
 }
 
+function createBlockIntegrity(files){return {algorithm:'sha256-chunks-1024-v1',blockBytes:1024,hashes:Object.fromEntries(files.map(f=>{const data=Buffer.from(f.base64,'base64');let digests='';for(let at=0;at<data.length;at+=1024)digests+=sha(data.subarray(at,at+1024));return [f.name,digests];}))};}
 function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const sourceCommit=cp.execFileSync('git',['rev-parse',(options.sourceCommit||'HEAD')+'^{commit}'],{cwd:root,encoding:'utf8'}).trim();
  // Historical rebuilds must execute the recorded builder, not today's logic.
@@ -21,7 +22,7 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const parentRaw=committed('dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json'),parentSha='866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4';
  if(sha(parentRaw)!==parentSha)throw Error('Official base changed');
  const parent=JSON.parse(parentRaw),file=(name,b)=>({name,size:b.length,sha256:sha(b),base64:b.toString('base64')});
- const pairs=[['vz.provider.js','provider.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
+ const pairs=[['vz.provider.js','provider.js'],['vz.integrity.js','integrity.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
  const bootstrap=pairs.map(([name,n])=>{const b=committed('initialization/zero/'+n);acorn.parse(b.toString(),{ecmaVersion:2015});if(/Number\s*\.\s*(?:isInteger|isFinite|isSafeInteger)\s*\(/.test(b.toString()))throw Error('Unsupported firmware number helper');return file(name,b);});
  const dedicated=options.targetProfile==='veranode-only';
  if(options.targetProfile!==undefined&&!dedicated)throw Error('Unsupported target profile');
@@ -43,11 +44,12 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const bootPrefix="(function(){var b=require('Storage').read('0vz.boot.js');if(typeof b!=='string')throw Error('Vera zero guard assente');eval(b);})();\n";
  target[bootIndex]=file('.boot0',Buffer.concat([Buffer.from(bootPrefix),Buffer.from(target[bootIndex].base64,'base64')]));
  const rows=target.map(({name,size,sha256})=>({name,size,sha256})),fingerprint=sha(Buffer.from(canonical(rows))),stagingBytes=target.reduce((n,f)=>n+f.size,0);
+ const integrity=createBlockIntegrity(bootstrap.concat(target));
  const supportFiles=bootstrap.map(({name,size,sha256})=>({name,size,sha256}));
- bootstrap.push(file('vz.target.js',Buffer.from('exports='+JSON.stringify({files:rows,fingerprint,stagingBytes,supportFiles,runtimePackageSha256:parent.runtimePackageSha256,authorizationMode:'app-confirmed'})+';\n')));
+ bootstrap.push(file('vz.target.js',Buffer.from('exports='+JSON.stringify({files:rows,fingerprint,stagingBytes,supportFiles,integrity,runtimePackageSha256:parent.runtimePackageSha256,authorizationMode:'app-confirmed'})+';\n')));
  const display=Buffer.from(bootstrap.find(f=>f.name==='vz.display.js').base64,'base64').toString();
  const feedbackBootstrapExpression="(function(){if(process.env.BOARD!=='BANGLEJS2'||process.env.VERSION!=='2v29')throw Error('Firmware non supportato');Bangle.setUI({mode:'custom',btn:function(){if(global.VeraZeroDisplay)global.VeraZeroDisplay.draw();}});Bangle.setLCDTimeout(0);Bangle.setOptions({wakeOnBTN1:true,wakeOnFaceUp:false,wakeOnTouch:false,lockTimeout:0,lcdPowerTimeout:0,backlightTimeout:0,btnLoadTimeout:0});var exports={};"+display+";if(global.VeraZeroDisplay)global.VeraZeroDisplay.dispose();global.VeraZeroDisplay=exports.create();return {feedbackReady:true,visualVerified:false};})()";
- const uiBootstrapExpression="(function(){if(process.env.BOARD!=='BANGLEJS2'||process.env.VERSION!=='2v29')throw Error('Firmware non supportato');var cached=Modules.getCached();['vz.provider.js','vz.platform.js','vz.display.js','vz.target.js'].forEach(function(n){if(cached.indexOf(n)>=0)Modules.removeCached(n);});delete global.VeraZero;delete global.VeraZeroError;global.VeraZeroUiReady=false;var s=require('Storage'),r=global.VeraZeroRawRead||global.VeraInitializeRead||global.VeraMaintenanceStorageRead||s.read.bind(s),b=r('vz.app.js');if(typeof b!=='string')throw Error('Interfaccia consenso assente');eval(b);if(global.VeraZeroError)throw Error(global.VeraZeroError);if(!global.VeraZero||!global.VeraZeroUiReady)throw Error('Interfaccia consenso non pronta');var status=global.VeraZero.status();if(status.authorizationMode!=='app-confirmed'||status.physicalConsentRequired!==false)throw Error('Autorizzazione dalla app non disponibile');status.appUiReady=true;status.visualVerified=false;return status;})()";
+ const uiBootstrapExpression="(function(){if(process.env.BOARD!=='BANGLEJS2'||process.env.VERSION!=='2v29')throw Error('Firmware non supportato');var cached=Modules.getCached();['vz.provider.js','vz.integrity.js','vz.platform.js','vz.display.js','vz.target.js'].forEach(function(n){if(cached.indexOf(n)>=0)Modules.removeCached(n);});delete global.VeraZero;delete global.VeraZeroError;global.VeraZeroUiReady=false;var s=require('Storage'),r=global.VeraZeroRawRead||global.VeraInitializeRead||global.VeraMaintenanceStorageRead||s.read.bind(s),b=r('vz.app.js');if(typeof b!=='string')throw Error('Interfaccia consenso assente');eval(b);if(global.VeraZeroError)throw Error(global.VeraZeroError);if(!global.VeraZero||!global.VeraZeroUiReady)throw Error('Interfaccia consenso non pronta');var status=global.VeraZero.status();if(status.authorizationMode!=='app-confirmed'||status.physicalConsentRequired!==false)throw Error('Autorizzazione dalla app non disponibile');status.appUiReady=true;status.visualVerified=false;return status;})()";
  acorn.parse(feedbackBootstrapExpression,{ecmaVersion:2015});acorn.parse(uiBootstrapExpression,{ecmaVersion:2015});
  const builderSha256=sha(committed('bin/build-veranode-zero.cjs'));
  const manifest={schema:'vera-bangle-zero-source-manifest/1',sourceRepository:repository,sourceCommit,files:inputs,parentInitializeSha256:parentSha,runtimePackageSha256:parent.runtimePackageSha256};
@@ -55,7 +57,7 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const executionPolicy=dedicated?releaseConfig.executionPolicy:{scope:'platform-admin-commissioning',allowedRoles:['super_admin','platform_admin'],allowedMacs:['D1:4D:6D:D2:E0:75']};
  const releaseFlags=dedicated?{targetProfile:'veranode-only'}:{};
  const executionEnabled=dedicated?releaseConfig.executionEnabled:true;
- const bundle={...releaseFlags,executionEnabled,executionPolicy,schema:'vera-bangle-zero-initialize/1',mode:'zero-initialization',protocol:1,board:'BANGLEJS2',firmware:['2v29'],preservesFirmware:true,preserveUserData:false,replaceSettings:true,requiresExistingVera:false,hardwareValidated:false,
+ const bundle={integrity,...releaseFlags,executionEnabled,executionPolicy,schema:'vera-bangle-zero-initialize/1',mode:'zero-initialization',protocol:1,board:'BANGLEJS2',firmware:['2v29'],preservesFirmware:true,preserveUserData:false,replaceSettings:true,requiresExistingVera:false,hardwareValidated:false,
   authorization:{enforcement:'consumer',deviceVerified:false,physicalConsent:false,confirmationSource:'app',encryptedBle:true},sourceRepository:repository,sourceCommit,sourceManifestSha256:sha(manifestBytes),parentInitializeSha256:parentSha,runtimeRevision:parent.runtimeRevision,runtimePackageSha256:parent.runtimePackageSha256,home:'veranode.app.js',
   binding:{fields:['executionId','generation','deviceId','mac','board','firmware','packageSha256','intent'],intent:'initialize-from-zero',generation:'uuid'},
   rpc:{factory:"(global.VeraZero||(global.VeraZero=require('vz.provider.js').create(require('vz.platform.js').create())))",methods:['inspect','requestSecurity','securityStatus','status','prepare','recover','stagingProgress','stage','beginWipe','step','verify','syncTime','activate','confirm','inventoryPage']},
@@ -69,4 +71,4 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  return {revision,sha256:hash,size:bytes.length,path:path.join(dir,'initialize.json'),bundle,descriptor};
 }
 if(require.main===module){const r=build(undefined,process.argv.includes('--dedicated')?{targetProfile:'veranode-only'}:{});console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
-module.exports={build,canonical,validateDedicatedRelease};
+module.exports={build,canonical,validateDedicatedRelease,createBlockIntegrity};
