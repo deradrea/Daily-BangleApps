@@ -245,6 +245,18 @@ test('reserved IDs, another user, expired and older profiles cannot be silently 
   other.user = policy().user; other.expiresAt = 1;
   assert.throws(() => node.installPolicy(other, true)); node.dispose();
 });
+
+test('configuration expiry never stops offline sampling or renews the stored approval',()=>{
+ const p=platform(core),node=runtime.create(p.env),data=policy();data.expiresAt=p.clock.now()+1000;
+ node.installPolicy(data,true);node.start();const before=node.samples.next;
+ p.clock.advance(65000);assert.equal(node.state.policyStale,true);
+ assert.equal(node.state.running,true);assert.ok(node.samples.next>=before+2);
+ assert.equal(node.state.policy.expiresAt,data.expiresAt);assert.equal(node.state.policy.revision,1);
+ const saved=core.unpack(p.storage.read('veranode.policy.json'));assert.equal(saved.expiresAt,data.expiresAt);
+ node.dispose();const restarted=runtime.create(p.env);restarted.start();p.clock.advance(30000);
+ assert.equal(restarted.state.policyStale,true);assert.equal(restarted.state.running,true);
+ assert.ok(restarted.samples.next>before+2);restarted.dispose();
+});
 test('storage failure cannot silence a detected condition or fake its persisted response', () => {
   const p = platform(core), node = runtime.create(p.env); node.start(); node.installPolicy(policy(), true);
   p.storage.fail = true;

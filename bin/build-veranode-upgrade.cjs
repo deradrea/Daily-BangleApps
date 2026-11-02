@@ -2,6 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),acorn=require('acorn'),cp=require('node:child_process');
 const root=path.resolve(__dirname,'..'),hash=x=>crypto.createHash('sha256').update(x).digest('hex');
 const sources=[
+ ['dist/veranode/veranode-0.2.0-dev-f4f3226f8bca4f26/package.json','91d5ae89f4c715ddec004dd98a30277ca7251671604ad69913873c78d928aa01'],
  ['test/veranode/fixtures/c212/package.json','838057b1fa2260cfc816f6db83b75649622017681ca971b4fa3a5dba0fa8e562'],
  ['dist/veranode/veranode-0.2.0-dev-545d8915cd396d71/package.json','7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a']];
 function build(output=path.join(root,'dist/veranode-upgrade'),options={}){

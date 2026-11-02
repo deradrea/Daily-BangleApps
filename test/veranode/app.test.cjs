@@ -8,7 +8,8 @@ const {Graphics} = require('./graphics.cjs');
 function fixture(savedStyle, batteryValue = 80, boot = false) {
   let face = savedStyle ? {style:savedStyle} : {};
   let ble = {enabled:true};
-  const storage = {readJSON: name => name === "setting.json" ? {brightness:1} : name === "veranode.ble.json" ? ble : face, write: (name,value) => {if(name === "veranode.face.json") face = JSON.parse(value);if(name === "veranode.ble.json") ble = JSON.parse(value);}};
+  const preferences = new Map();
+  const storage = {read: name => preferences.get(name), readJSON: name => name === "setting.json" ? {brightness:1} : name === "veranode.ble.json" ? ble : face, write: (name,value) => {preferences.set(name,value);if(name === "veranode.face.json") face = JSON.parse(value);if(name === "veranode.ble.json") ble = JSON.parse(value);}};
   const radio=[];
   let charging = false; const listeners = new Map();
   const security = {connected: true, connected_addr: "11:22:33:44:55:66 random", encrypted: true, bonded: true};
@@ -21,6 +22,7 @@ function fixture(savedStyle, batteryValue = 80, boot = false) {
   const stats = {pending: 123, stored: 128, capacity: 2944, available: 2816, full: false};
   const options = {wakeOnBTN1: true};
   const context = {require: name => name === "Storage" ? storage : core, global: {__FILE__: boot ? 'veranode.app.js' : undefined, VeraNode: {state,
+    displaySettings: new core.DisplayPreferences(storage),
     start: () => {state.running = true;},
     samples: {pending: () => stats.pending, stats: () => {statsReads++; return {...stats};}},
     onChange: fn => {update = fn; return () => {update = null;};},
@@ -32,7 +34,7 @@ function fixture(savedStyle, batteryValue = 80, boot = false) {
     NRF: {getSecurityStatus: () => security, sleep: () => {radio.push(false);security.connected=false;}, wake: () => radio.push(true)}, E: {getBattery: () => batteryValue}, g: graphics, Date: class extends Date {constructor(...args) {super(...(args.length ? args : [clock.now()]));} static now() {return clock.now();}}, setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout, setInterval: clock.setInterval, clearInterval: clock.clearInterval};
   vm.runInNewContext(fs.readFileSync(require.resolve('../../apps/veranode/app.js'), 'utf8'), context);
-  return {clock, graphics, state, radio, stats, consentTrace: () => context.global.VeraNode.uiConsentTrace, statsReads: () => statsReads, update: () => update(), input, power, locks, brightness, backlight, changes, responses, options, listeners, security, charging: value => {charging = value; if (listeners.has("charging")) listeners.get("charging")(value);}};
+  return {node:context.global.VeraNode, clock, graphics, state, radio, stats, consentTrace: () => context.global.VeraNode.uiConsentTrace, statsReads: () => statsReads, update: () => update(), input, power, locks, brightness, backlight, changes, responses, options, listeners, security, charging: value => {charging = value; if (listeners.has("charging")) listeners.get("charging")(value);}};
 }
 test('actual clock has no hidden redraw, uses requested label and cleans up UI only', () => {
   const f = fixture(); assert.equal(f.state.running, true); assert.equal(f.power.at(-1), false); assert.equal(f.locks.at(-1), false); assert.equal(f.graphics.commands.length, 0);
@@ -285,7 +287,7 @@ test('settings and profile are reachable with back navigation and no radio or pr
   const original=JSON.stringify(f.state.policy);
   f.input.btnRelease();f.clock.advance(401);f.input.touch(1,{x:20,y:15});
   f.clock.advance(301);f.input.swipe(0,-1);f.input.swipe(0,-1);f.input.touch(1,{x:130,y:118});assert.ok(has('Sistema'));
-  f.clock.advance(301);f.input.touch(1,{x:88,y:100});assert.ok(has('Profilo Vera'));
+  f.clock.advance(301);f.input.touch(1,{x:88,y:100});assert.ok(has('Configurazione'));
   f.clock.advance(301);f.input.touch(1,{x:16,y:15});assert.ok(has('Sistema'));
   assert.equal(JSON.stringify(f.state.policy),original);assert.deepEqual(f.radio,[]);f.input.remove();
 });
@@ -487,16 +489,67 @@ test('administrative erase view includes pending records but cannot destroy data
   assert.equal(f.state.running,true);f.input.remove();assert.equal(f.clock.timers.size,0);
 });
 
+test('watch erase confirmation is a dedicated physical target and cannot repeat while running',()=>{
+ const f=fixture();let phase='confirmation',confirms=0;
+ f.node.administration={status:()=>({executionEnabled:true,phase,total:128,removed:0}),
+   confirm:()=>{confirms++;phase='running';},cancel:()=>true};
+ f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);f.input.touch(1,{x:88,y:118});
+ f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+ const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
+ assert.ok(has('Verifica e cancella'));assert.ok(has('Anche non trasferiti'));
+ f.clock.advance(301);f.input.touch(1,{x:40,y:55});assert.equal(confirms,0);
+ f.clock.advance(301);f.input.touch(1,{x:88,y:156});assert.equal(confirms,1);assert.ok(has('Non spegnere'));
+ f.clock.advance(301);f.input.touch(1,{x:88,y:156});assert.equal(confirms,1);f.input.remove();
+});
+test('cooperative verification has visible percentage, stays awake and can be cancelled without confirming again',()=>{
+ const f=fixture();let phase='confirmation',confirms=0,cancels=0;
+ f.node.administration={status:()=>({executionEnabled:true,phase,total:128,removed:0,verificationPercent:42,pending:false}),
+  confirm:()=>{confirms++;phase='verifying';f.update();},cancel:()=>{cancels++;phase='idle';f.update();return true;}};
+ f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);f.input.touch(1,{x:88,y:118});
+ f.clock.advance(301);f.input.touch(1,{x:88,y:156});f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+ f.clock.advance(15000);f.update();f.clock.advance(2100);
+ const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
+ assert.ok(has('Verifica firma'));assert.ok(has('42%'));assert.ok(has('Annulla verifica'));assert.equal(f.power.at(-1),true);
+ f.clock.advance(301);f.input.touch(1,{x:88,y:156});assert.equal(confirms,1);assert.ok(cancels>=1);
+ f.input.remove();
+});
+
 test('system destinations scroll without pagination and expose honest time and software states',()=>{
   const f=fixture(),has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
   f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
   f.input.swipe(0,-1);f.input.swipe(0,-1);f.input.touch(1,{x:88,y:118});
   f.input.swipe(0,-1);f.input.swipe(0,-1);
   f.clock.advance(301);f.input.touch(1,{x:88,y:60});assert.ok(has('Ora e data'));
-  assert.ok(has('da Vera App'));assert.ok(has('Date originali conservate'));
+  assert.ok(has('Sincronizza da Vera App'));assert.ok(has('Imposta sul Bangle'));
   f.clock.advance(301);f.input.touch(1,{x:16,y:16});
   f.clock.advance(301);f.input.touch(1,{x:88,y:118});assert.ok(has('Versione: vedi app'));
   assert.ok(!has('Aggiornato'));f.input.remove();
+});
+
+function openTimeEditor(f) {
+  f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
+  f.input.swipe(0,-1);f.input.swipe(0,-1);f.input.touch(1,{x:88,y:118});
+  f.input.swipe(0,-1);f.input.swipe(0,-1);f.clock.advance(301);f.input.touch(1,{x:88,y:60});
+  f.clock.advance(301);f.input.touch(1,{x:88,y:120});
+}
+test('local clock editor changes nothing until final confirmation and rejects impossible civil dates',()=>{
+  for(const invalid of [false,true]) {
+    const f=fixture(),calls=[];
+    f.clock.time=Date.UTC(2026,0,31,12,0);
+    f.node.readClock=()=>({epoch:'time-epoch',boot:'boot',revision:4});
+    f.node.setLocalClock=r=>{calls.push(r);return {quality:'manual_device'};};
+    const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
+    openTimeEditor(f);assert.ok(has('Anno'));
+    for(let field=0;field<5;field++) {
+      if(invalid && field===1){f.clock.advance(301);f.input.touch(1,{x:134,y:107});}
+      f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+    }
+    assert.equal(calls.length,0);assert.ok(has('Conferma ora'));
+    f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+    if(invalid){assert.equal(calls.length,0);assert.ok(has('Data non valida'));assert.ok(has('Giorno'));}
+    else{assert.equal(calls.length,1);assert.equal(calls[0].revision,4);assert.ok(has('Ora impostata'));assert.ok(has('Verifica con Vera App'));}
+    f.input.remove();assert.equal(f.clock.timers.size,0);
+  }
 });
 
 
@@ -543,4 +596,15 @@ test('pinned pulse stops its repaint interval on stale data and resumes with fre
  assert.ok([...f.clock.timers.values()].some(t=>t.ms===250));
  f.clock.advance(250);assert.ok(f.graphics.commands.length>count);
  f.input.remove();assert.equal(f.clock.timers.size,0);
+});
+
+test('remote preferences apply without waking LCD, preserve navigation and consent, and clean listeners',()=>{
+ const f=fixture();const preferences=f.node.displaySettings;
+ const set=(values)=>{const v=preferences.read();return preferences.set({operationId:'test-'+v.revision,expectedRevision:v.revision,values:{brightnessPercent:40,standbySeconds:30,effect:'trace',...values}});};
+ set();assert.equal(f.power.at(-1),false);assert.equal(f.brightness.at(-1),0);
+ f.input.btnRelease();f.clock.advance(401);assert.equal(f.brightness.at(-1),0.4);f.clock.advance(11000);assert.equal(f.power.at(-1),true);
+ f.input.swipe(0,1);set({brightnessPercent:65});assert.equal(f.brightness.at(-1),0.65);assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Menu'));
+ f.state.consent={id:'admin-display',purpose:'display',decide:()=>true};f.update();set({standbySeconds:5});f.clock.advance(21000);
+ assert.equal(f.power.at(-1),true);assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Solo display'));
+ f.input.remove();assert.equal(preferences.listeners.length,0);assert.equal(f.clock.timers.size,0);
 });

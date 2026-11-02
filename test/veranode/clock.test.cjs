@@ -56,3 +56,33 @@ test('runtime sync clears stale sensor times and duration accumulators while pre
   assert.deepEqual(node.state.values,{});assert.equal(node.state.running,true);
   node.tick();assert.ok(node.samples.readBatch(0,16).at(-1).at>1577836800000);node.dispose();
 });
+
+test('manual clock preserves original samples and cannot claim synchronized quality',()=>{
+  const f=setup();f.tracker.sync(request(f));
+  f.samples.append('sample',f.clock.now(),{bpm:72});
+  const bytes=f.storage.files.get('s0'),s=f.tracker.status();
+  const req={epoch:s.epoch,boot:s.boot,revision:s.revision,utcMs:1792054800000,timezoneMinutes:120};
+  const result=f.tracker.manual(req);
+  assert.equal(result.quality,'manual_device');assert.equal(result.validUntil,null);
+  assert.equal(result.uncertaintyMs,null);assert.equal(f.storage.files.get('s0'),bytes);
+  const rows=f.history.readBatch(0,16);
+  assert.deepEqual(rows.slice(-2).map(r=>r.data.type),['manual_intent','manual_applied']);
+  assert.equal(rows.at(-1).data.source,'device_manual');assert.equal(rows.at(-1).data.fromSequence,2);
+  const next=f.history.next;f.tracker.manual(req);assert.equal(f.history.next,next);
+  assert.throws(()=>f.tracker.manual({...req,utcMs:req.utcMs+1}));
+  const fresh=f.tracker.status();f.tracker.sync({...request(f),epoch:fresh.epoch,boot:fresh.boot,revision:fresh.revision,
+    syncId:'22222222-2222-4222-8222-222222222222'});
+  assert.equal(f.tracker.status().quality,'phone_auto');
+});
+
+test('manual clock blocks stale forms and failed or full audit before changing time',()=>{
+  for(const mutate of [r=>r.revision++,r=>r.boot='other',r=>r.utcMs=NaN,r=>r.timezoneMinutes=841]) {
+    const f=setup(),s=f.tracker.status(),r={epoch:s.epoch,boot:s.boot,revision:s.revision,utcMs:1792054800000,timezoneMinutes:120};
+    mutate(r);const before=f.clock.now();assert.throws(()=>f.tracker.manual(r));assert.equal(f.clock.now(),before);
+  }
+  for(const full of [true,false]) {
+    const f=setup();if(full)while(f.history.append('clock',1,{})){}else f.storage.fail=true;
+    const s=f.tracker.status(),before=f.clock.now();assert.throws(()=>f.tracker.manual({epoch:s.epoch,boot:s.boot,
+      revision:s.revision,utcMs:1792054800000,timezoneMinutes:120}));assert.equal(f.clock.now(),before);
+  }
+});

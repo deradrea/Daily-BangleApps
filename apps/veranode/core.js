@@ -26,7 +26,8 @@ function unpack(text) {
 }
 
 /* Append-only StorageFile segments. ACK checkpoints alternate and are read back.
- * No deletion until custody has been explicitly confirmed by a trusted gateway.
+ * Normal pruning requires custody. Administrative discard requires a separate
+ * signed bounded intent and never creates a custody acknowledgement.
  * This prototype exposes readBatch/ack through JS, not an unauthenticated BLE write.
  */
 function Journal(storage, prefix, options) {
@@ -124,16 +125,19 @@ Journal.prototype.saveCheckpoint = function(value) {
   if (!readback || JSON.stringify(readback) !== JSON.stringify(value)) throw new Error("Checkpoint non confermato");
 };
 Journal.prototype.append = function(kind, at, payload) {
-  if(this.eraseLock)throw new Error("Archivio in manutenzione amministrativa");
+  if(this.eraseLock && !Array.isArray(this.eraseReserved))throw new Error("Archivio in manutenzione amministrativa");
   var row = {v: 1, epoch: this.checkpoint.epoch, seq: this.next, kind: kind, at: at, data: payload};
   var encoded = pack(row);
   if (encoded.length > this.maxLine) throw new Error("Record troppo grande");
   var segment = this.segments[this.segments.length - 1];
+  if(segment && this.eraseReserved && this.eraseReserved.includes(segment.name))segment=null;
   if (!segment || segment.sealed) {
     if (this.segments.length >= this.maxSegments) { this.full = true; return; }
-    var names = this.segments.map(function(s) { return s.name; });
+    var names = this.segments.map(function(s) { return s.name; }).concat(this.eraseReserved||[]);
     var index = 0;
     while (names.includes(this.prefix + index)) index++;
+    if(index>=512)throw new Error("Archivio oltre il limite supportato");
+    if(index>=this.maxSegments){this.full=true;return;}
     segment = {name: this.prefix + index, count: 0, last: 0, sealed: false};
     this.segments.push(segment);
   }
@@ -207,6 +211,10 @@ Journal.prototype.stats = function() {
   this.segments.forEach(function(segment) { stored += segment.count; });
   var available = (this.maxSegments - this.segments.length) * this.segmentRecords +
     (last && !last.sealed ? this.segmentRecords - last.count : 0);
+  if(this.eraseReserved) {
+    var names=this.segments.map(function(s){return s.name;});
+    available=Math.max(0,available-this.eraseReserved.filter(function(name){return !names.includes(name);}).length*this.segmentRecords);
+  }
   return {capacity: this.maxSegments * this.segmentRecords, stored: stored,
     pending: this.pending(), available: available, full: available === 0};
 };
@@ -433,3 +441,56 @@ exports.unpack = unpack;
 exports.validatePresentation = validatePresentation;
 exports.Interaction = Interaction;
 exports.Cues = Cues;
+
+// Display preferences are independent from measurement/policy journals.
+function DisplayPreferences(storage) {
+  this.storage = storage; this.listeners = []; this.file = "veranode.display.json";
+}
+DisplayPreferences.prototype.read = function() {
+  var raw = this.storage.read(this.file), value;
+  if (raw === undefined || raw === null) {
+    var old = this.storage.readJSON("veranode.face.json", 1) || {};
+    value = {schema:1,revision:0,brightnessPercent:100,standbySeconds:10,
+      effect:["cycle","pulse","trace","still"].includes(old.style)?old.style:"cycle",lastOperation:null};
+  } else {
+    try { value=JSON.parse(raw); } catch (_) { throw new Error("Preferenze display illeggibili"); }
+  }
+  if (!value || value.schema!==1 || typeof value.revision!=="number" || value.revision<0 || Math.floor(value.revision)!==value.revision ||
+      !this.valid(value) || !(value.lastOperation===null || typeof value.lastOperation==="string")) throw new Error("Preferenze display non valide");
+  return value;
+};
+DisplayPreferences.prototype.valid = function(v) {
+  return v && typeof v.brightnessPercent==="number" && Math.floor(v.brightnessPercent)===v.brightnessPercent &&
+    v.brightnessPercent>=10 && v.brightnessPercent<=100 && [5,10,15,30,60,120].includes(v.standbySeconds) &&
+    ["cycle","pulse","trace","still"].includes(v.effect);
+};
+DisplayPreferences.prototype.set = function(request) {
+  var keys=Object.keys(request.values || {});
+  if(keys.length!==3 || keys.some(function(k){return !["brightnessPercent","standbySeconds","effect"].includes(k);}) || !this.valid(request.values) ||
+    typeof request.operationId!=="string" || request.operationId.length<1 || request.operationId.length>40 || !/^[a-z0-9_-]+$/i.test(request.operationId) ||
+    typeof request.expectedRevision!=="number" || request.expectedRevision<0 || Math.floor(request.expectedRevision)!==request.expectedRevision) throw new Error("Preferenze richieste non valide");
+  var current=this.read(), v=request.values;
+  function matches(c){return c.brightnessPercent===v.brightnessPercent && c.standbySeconds===v.standbySeconds && c.effect===v.effect;}
+  if(current.lastOperation===request.operationId) {
+    if(current.previousRevision!==request.expectedRevision || !matches(current)) throw new Error("Identificativo operazione riutilizzato");
+    return current;
+  }
+  if(current.revision!==request.expectedRevision) throw new Error("Preferenze cambiate: rileggere");
+  if(matches(current))return current;
+  var next={schema:1,revision:current.revision+1,brightnessPercent:v.brightnessPercent,standbySeconds:v.standbySeconds,effect:v.effect,
+    lastOperation:request.operationId,previousRevision:current.revision};
+  // Even an exception can follow a completed flash write. Reconcile once by
+  // reading; never repeat the write or overwrite an uncertain outcome.
+  try {this.storage.write(this.file,JSON.stringify(next));} catch (_) {}
+  var confirmed=this.read();
+  if(JSON.stringify(confirmed)!==JSON.stringify(next))throw new Error("Salvataggio display non confermato: rileggere");
+  this.listeners.slice().forEach(function(fn){try{fn(confirmed);}catch(_){}});
+  return confirmed;
+};
+DisplayPreferences.prototype.onChange=function(fn){var self=this;this.listeners.push(fn);return function(){self.listeners=self.listeners.filter(function(v){return v!==fn;});};};
+exports.DisplayPreferences=DisplayPreferences;
+DisplayState.prototype.setTimeoutSeconds=function(seconds){
+  if(![5,10,15,30,60,120].includes(seconds))throw new Error("Standby non valido");
+  this.timeout=seconds*1000;
+  if(this.mode==="temporary" && !this.alert)this.show("temporary");
+};

@@ -5,7 +5,7 @@ exports.service = "d4a10000-7b2c-4c61-9e3a-5f42616e676c";
 exports.request = "d4a10001-7b2c-4c61-9e3a-5f42616e676c";
 exports.response = "d4a10002-7b2c-4c61-9e3a-5f42616e676c";
 exports.create = function(env) {
-  var dropping = false, buffer = "", owner = null, pending = null, replies = [], timer, consentTimer, closed = false;
+  var dropping = false, buffer = "", owner = null, displaySession = null, pending = null, replies = [], timer, consentTimer, displayTimer, closed = false;
   var replyOptions = {};
   var diagnostics = env.node.state.management = {bytes: 0, frames: 0, parseErrors: 0, invalidIds: 0, requests: 0, authorizations: 0, decisions: 0, responses: 0, lastOp: null, lastError: null};
   function ascii(value) {
@@ -45,6 +45,11 @@ exports.create = function(env) {
     replies.push({text: text, at: 0, safeTransport: options.safeTransport === true});
     if (!timer) pump();
   }
+  function clearDisplay() {
+    displaySession=null;
+    if(displayTimer)env.clock.clearTimeout(displayTimer);
+    displayTimer=undefined;
+  }
   function clearConsent() {
     if (consentTimer) env.clock.clearTimeout(consentTimer);
     consentTimer = undefined; pending = null; env.consent(null);
@@ -53,10 +58,16 @@ exports.create = function(env) {
     if (!pending) return false;
     diagnostics.decisions++;
     var req = pending;
-    if (approved && env.encrypted()) owner = {user: req.user, scope: req.scope};
-    env.node.state.peerName = owner && typeof req.peerName === "string" ? req.peerName : null;
+    if (approved && env.encrypted()) {
+      if(req.op==="authorize_display") {
+        clearDisplay();displaySession={active:true};
+        displayTimer=env.clock.setTimeout(clearDisplay,300000);
+      }
+      else owner = {user: req.user, scope: req.scope};
+    }
+    env.node.state.peerName = (owner || displaySession) && typeof req.peerName === "string" ? req.peerName : null;
     if (env.node.changed) env.node.changed();
-    clearConsent(); answer(req.id, {authorized: !!owner}, owner ? null : "Collegamento non autorizzato");
+    clearConsent(); answer(req.id, {authorized: !!(owner || displaySession)}, (owner || displaySession) ? null : "Collegamento non autorizzato");
     return true;
   }
   function handle(req) {
@@ -66,6 +77,16 @@ exports.create = function(env) {
     diagnostics.requests++; diagnostics.lastOp = req.op;
     if (req.op === "authorize") diagnostics.authorizations++;
     if (!env.encrypted()) { answer(req.id, null, "Collegamento cifrato richiesto"); return; }
+    // This grants only harmless display settings after local physical consent.
+    // No server token is interpreted or claimed to be verified by the watch.
+    if(req.op==="authorize_display") {
+      if(pending){answer(req.id,null,"Conferma gia in corso");return;}
+      if(req.mac!==env.mac){answer(req.id,null,"Contesto non valido");return;}
+      if(req.peerName!==undefined && (typeof req.peerName!=="string" || !req.peerName.trim() || req.peerName.length>32 || /[\x00-\x1f\x7f]/.test(req.peerName))){answer(req.id,null,"Nome dispositivo non valido");return;}
+      owner=null;clearDisplay();env.node.state.peerName=null;pending=req;
+      env.consent({id:req.id,purpose:"display",decide:decide});
+      consentTimer=env.clock.setTimeout(function(){decide(false);},60000);return;
+    }
     if (req.op === "authorize") {
       if (pending) { answer(req.id, null, "Conferma gia in corso"); return; }
       if (typeof req.user !== "string" || req.user.length !== 36 || !/^[0-9a-f-]+$/i.test(req.user) ||
@@ -80,13 +101,14 @@ exports.create = function(env) {
       if (policy && (policy.user !== req.user || policy.scope !== req.scope)) {
         answer(req.id, null, "Device assegnato a un altro contesto"); return;
       }
-      owner = null; env.node.state.peerName = null; pending = req;
+      owner = null; clearDisplay(); env.node.state.peerName = null; pending = req;
       env.consent({id: req.id, user: req.user, scope: req.scope, decide: decide});
       consentTimer = env.clock.setTimeout(function() { decide(false); }, 60000);
       return;
     }
-    if (req.op === "revoke") { owner = null; clearConsent(); answer(req.id, {revoked: true}); return; }
-    if (!owner) { answer(req.id, null, "Conferma sul Bangle richiesta"); return; }
+    if (req.op === "revoke") { owner = null; clearDisplay(); clearConsent(); answer(req.id, {revoked: true}); return; }
+    if(!owner && displaySession && req.op!=="settings_get" && req.op!=="settings_set") {answer(req.id,null,"Sessione limitata al display");return;}
+    if (!owner && !displaySession) { answer(req.id, null, "Conferma sul Bangle richiesta"); return; }
     try {
       var node = env.node, state = node.state;
       if (req.op === "status") {
@@ -95,7 +117,7 @@ exports.create = function(env) {
           sampleAck: node.samples.checkpoint.ack, sampleDiscardedThrough: node.samples.checkpoint.discardedThrough || 0,
           sampleAdministrativePending: !!node.samples.eraseLock, eventEpoch: node.events.checkpoint.epoch,
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
-          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory}};
+          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
         if (node.timeHistory) {
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
@@ -111,11 +133,19 @@ exports.create = function(env) {
         snapshot.storageError = state.storageError;
         if (node.health) snapshot.acquisitionHealth = node.health();
         snapshot.contextConfigured = !!state.policy;
+        snapshot.configuration = state.policy ? {user:state.policy.user,scope:state.policy.scope,
+          revision:state.policy.revision,expiresAt:state.policy.expiresAt,
+          stale:Date.now()>state.policy.expiresAt} : null;
+        snapshot.capabilities.displaySettings = !!node.displaySettings;
+        snapshot.capabilities.administrativeErase = !!(node.administration && node.administration.status().executionEnabled);
         if (env.describe) {
           try { snapshot.hardware = env.describe(); }
           catch (_) { snapshot.hardwareError = true; }
         }
         answer(req.id, snapshot);
+      } else if (req.op === "settings_get" || req.op === "settings_set") {
+        if(!node.displaySettings)throw new Error("Preferenze display non disponibili");
+        answer(req.id,req.op==="settings_get"?node.displaySettings.read():node.displaySettings.set(req));
       } else if (req.op === "clock") {
         answer(req.id, node.readClock());
       } else if (req.op === "clock_sync") {
@@ -124,6 +154,21 @@ exports.create = function(env) {
         if (!req.profile || req.profile.user !== owner.user || req.profile.scope !== owner.scope) throw new Error("Profilo fuori contesto");
         var revision = node.installPolicy(req.profile, true);
         answer(req.id, {appliedRevision: revision});
+      } else if (req.op === "admin_status" || req.op === "admin_challenge" || req.op === "admin_offer" || req.op === "admin_plan") {
+        if (!node.administration || !node.administration.status().executionEnabled)
+          throw new Error("Cancellazione protetta non abilitata");
+        if (req.op === "admin_status") answer(req.id,node.administration.status());
+        else if(req.op === "admin_challenge") {
+          var challengeBody=node.administration.prepare(req.operationId);
+          var initialPlan=node.administration.plan(req.operationId);
+          answer(req.id,{body:challengeBody,segment_plan:initialPlan.slice(0,16),plan_count:initialPlan.length,next_offset:initialPlan.length>16?16:null});
+        } else if(req.op === "admin_plan") {
+          var plan=node.administration.plan(req.operationId),offset=req.offset;
+          if(typeof offset!=="number" || offset<0 || offset>=plan.length || Math.floor(offset)!==offset || offset%16!==0)throw new Error("Pagina piano non valida");
+          answer(req.id,{operationId:req.operationId,offset:offset,segment_plan:plan.slice(offset,offset+16),plan_count:plan.length,next_offset:offset+16<plan.length?offset+16:null});
+        }
+        else {node.administration.offer(req.grant);answer(req.id,{confirmationRequired:true});}
+        // Destruction can only be confirmed from the watch UI. No BLE execute op.
       } else if (req.op === "batch" || req.op === "ack") {
         if (!["samples", "events", "clock"].includes(req.stream)) throw new Error("Archivio non valido");
         var journal = req.stream === "samples" ? node.samples : req.stream === "events" ? node.events : node.timeHistory;
@@ -150,7 +195,7 @@ exports.create = function(env) {
         try { handle(req); } catch (e) {
           // Never leak request data or confuse runtime failures with malformed JSON.
           diagnostics.lastError = "Errore interno gestione";
-          owner = null;
+          owner = null; clearDisplay();
           try { clearConsent(); } catch (_) { /* UI failure must still revoke authorization. */ }
           if (req && typeof req.id === "string" && req.id.length <= 40 && /^[a-z0-9_-]+$/i.test(req.id)) {
             answer(req.id, null, "Errore interno gestione");
@@ -163,7 +208,7 @@ exports.create = function(env) {
     }
   }
   function reset() {
-    replyOptions = {}; owner = null; env.node.state.peerName = null; buffer = ""; dropping = false; replies = [];
+    replyOptions = {}; owner = null; clearDisplay(); env.node.state.peerName = null; buffer = ""; dropping = false; replies = [];
     if (timer) env.clock.clearTimeout(timer); timer = undefined;
     clearConsent();
   }

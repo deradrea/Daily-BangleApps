@@ -5,6 +5,7 @@ exports.create = function(env) {
   var revision = history.next - 1, tracked = false, quality = "unverified";
   var lastObserved = clock.now(), reference = null, started = false;
   var lastSync = env.core.unpack(env.storage.read("veranode.time.json")) || null;
+  var lastManual = null;
   function available() {
     return history.stats().available;
   }
@@ -90,5 +91,38 @@ exports.create = function(env) {
     }
     return status();
   }
-  return {start: start, observe: observe, status: status, sync: sync};
+  function manual(req) {
+    if (!req || typeof req.utcMs !== "number" || !isFinite(req.utcMs) ||
+        Math.floor(req.utcMs) !== req.utcMs || req.utcMs < 1577836800000 || req.utcMs > 4102444800000 ||
+        typeof req.timezoneMinutes !== "number" || !isFinite(req.timezoneMinutes) ||
+        Math.floor(req.timezoneMinutes) !== req.timezoneMinutes || Math.abs(req.timezoneMinutes) > 840)
+      throw new Error("Data o ora non valida");
+    if (lastManual && req.epoch === lastManual.epoch && req.boot === lastManual.boot && req.revision === lastManual.revision) {
+      if (req.utcMs !== lastManual.utcMs || req.timezoneMinutes !== lastManual.timezoneMinutes)
+        throw new Error("Modifica orario in conflitto");
+      return status();
+    }
+    if (req.epoch !== history.checkpoint.epoch || req.revision !== revision || req.boot !== boot)
+      throw new Error("Ora cambiata: riapri la modifica");
+    if (typeof clock.setWall !== "function") throw new Error("Impostazione non disponibile");
+    if (available() < 2) throw new Error("Storico orario pieno: recupera prima i dati");
+    var before = clock.now();
+    record("manual_intent", {beforeMs: before, utcMs: req.utcMs, source: "device_manual"});
+    quality = "unverified"; reference = null;
+    try {
+      clock.setWall(req.utcMs, req.timezoneMinutes);
+      var after = clock.now();
+      if (Math.abs(after - req.utcMs) > 2000) throw new Error("Ora impostata da verificare");
+      record("manual_applied", {beforeMs: before, afterMs: after, deltaMs: after - before,
+        utcMs: req.utcMs, timezoneMinutes: req.timezoneMinutes, source: "device_manual"});
+      quality = "manual_device";
+      lastManual = {epoch: req.epoch, boot: req.boot, revision: req.revision,
+        utcMs: req.utcMs, timezoneMinutes: req.timezoneMinutes};
+    } finally {
+      lastObserved = clock.now();
+      if (env.adjusted) env.adjusted(clock.now() - before);
+    }
+    return status();
+  }
+  return {start: start, observe: observe, status: status, sync: sync, manual: manual};
 };

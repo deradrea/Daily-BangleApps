@@ -303,9 +303,12 @@ exports.create = function(env) {
     env.hrm(false); listeners = [];
   }
   return {state: state, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, installPolicy: installPolicy, respond: respond,
+    administration: env.administration || null,
+    displaySettings: new core.DisplayPreferences(storage),
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,
     readClock: function() { if (!timeTracker) throw new Error("Controllo orario non disponibile"); observeTime(); return timeTracker.status(); },
     syncClock: function(req) { if (!timeTracker) throw new Error("Controllo orario non disponibile"); return timeTracker.sync(req); },
+    setLocalClock: function(req) { if (!timeTracker) throw new Error("Controllo orario non disponibile"); return timeTracker.manual(req); },
     onChange: function(fn) { listeners.push(fn); return function() { listeners = listeners.filter(function(v) { return v !== fn; }); }; },
     changed: changed};
 };

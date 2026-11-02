@@ -15,10 +15,13 @@
     consentTrace.push({at: Date.now(), event: event, mode: ui && ui.mode, detail: detail});
     if (consentTrace.length > 16) consentTrace.shift();
   }
-  var storage = require("Storage"), savedFace = storage.readJSON("veranode.face.json", 1) || {};
+  var storage = require("Storage");
+  var displaySettings = node.displaySettings || new core.DisplayPreferences(storage);
+  var displayValues;
+  try { displayValues=displaySettings.read(); } catch (_) { displayValues={brightnessPercent:100,standbySeconds:10,effect:"cycle"}; }
   var installedInfo = storage.readJSON("veranode.info", 1) || {};
   var styles = ["cycle", "pulse", "trace", "still"];
-  var style = styles.includes(savedFace.style) ? savedFace.style : "cycle";
+  var style = displayValues.effect;
   var previousPulse, previousPulseColor, previousCycle, styleError = false, candidate = styles.indexOf(style), animationEpoch = Date.now(), lastTap = 0;
   var previousOptions = Bangle.getOptions();
   var previousBrightness = (require("Storage").readJSON("setting.json", 1) || {}).brightness;
@@ -42,7 +45,7 @@
     // explicitly ignored below until a deliberate button press wakes the UI.
     Bangle.setLocked(false);
     // Brightness and backlight power are separate on firmware 2v29.
-    Bangle.setLCDBrightness(on ? 1 : 0);
+    Bangle.setLCDBrightness(on ? displayValues.brightnessPercent / 100 : 0);
     Bangle.setBacklight(on);
     startAnimation(on);
     if (minuteTimer) clearInterval(minuteTimer);
@@ -71,7 +74,13 @@
   }
   function setPage(next) { page = next; if (next === "effects") candidate = styles.indexOf(style); previousPulse = undefined; startAnimation(ui.mode !== "off"); draw(ui); }
   function openPage(next) { history.push(page); setPage(next); }
-  function back() { if (page === "consent-ended") consentEnded = false; setPage(history.pop() || "clock"); }
+  function back() {
+    if(page==="admin" && node.administration) {
+      var admin=node.administration.status();
+      if(admin.phase==="verifying" && !admin.pending)node.administration.cancel();
+    }
+    if (page === "consent-ended") consentEnded = false; setPage(history.pop() || "clock");
+  }
   function home() { consentEnded = false; history = []; setPage("clock"); }
   function button(x1, y1, x2, y2, label, size) {
     g.setColor(colors.accent).drawRect(x1, y1, x2, y2);
@@ -150,7 +159,7 @@
   }
   var systemItems=[
     {label:"Effetti",page:"effects",icon:"effects",color:colors.heart},
-    {label:"Profilo",page:"status",icon:"profile",color:colors.success},
+    {label:"Configurazione",page:"status",icon:"profile",color:colors.success},
     {label:"Ora e data",page:"time",icon:"clock",color:colors.warning},
     {label:"Software",page:"software",icon:"system",color:colors.accent},
     {label:"Amministr.",page:"admin",icon:"admin",color:colors.warning}
@@ -203,13 +212,13 @@
     button(8, 134, 168, 174, styles[candidate] === style ? "Attivo / Esci" : "Applica", 18);
   }
   function statusPage(w) {
-    pageHeader("Profilo");
+    pageHeader("Configurazione");
     icon("profile",24,51,colors.success);
-    text(state.policy ? "Profilo Vera" : "Nessun profilo", 102, 39, 18, colors.text, 0);
-    text(state.policy ? "Revisione " + state.policy.revision : "Da Vera App", w / 2, 67, 18, colors.text, 0);
+    text(state.policy ? "Vera" : "Da configurare", 102, 39, 18, colors.text, 0);
+    text(state.policyStale ? "Raccolta continua" : state.policy ? "Revisione " + state.policy.revision : "Da Vera App", w / 2, 67, 18, colors.text, 0);
     var rules = state.policy && Array.isArray(state.policy.rules) ? state.policy.rules.length : null;
     text(rules === null ? "Regole: --" : rules + " regole", w / 2, 91, 18, colors.text, 0);
-    text(state.policyStale ? "Scaduto" : state.policy ? "Presente" : "Da configurare", w / 2, 115, 16, state.policyStale ? colors.warning : colors.text, 0);
+    text(state.policyStale ? "Da aggiornare" : state.policy ? "Presente" : "Da configurare", w / 2, 115, 16, state.policyStale ? colors.warning : colors.text, 0);
     button(8, 134, 168, 174, "Indietro", 18);
   }
   function timePage(w) {
@@ -218,9 +227,69 @@
     icon("clock",24,57,colors.warning);
     text(("0"+now.getHours()).slice(-2)+":"+("0"+now.getMinutes()).slice(-2),104,40,32,colors.text,0);
     text(now.getFullYear()<2020?"Data da verificare":now.getDate()+" / "+(now.getMonth()+1)+" / "+now.getFullYear(),w/2,82,18,colors.warning,0);
-    text("Verifica e sincronizza",w/2,112,15,colors.text,0);
-    text("da Vera App",w/2,132,17,colors.accent,0);
-    text("Date originali conservate",w/2,158,12,colors.text,0);
+    button(8,103,168,141,"Imposta sul Bangle",17);
+    text("Sincronizza da Vera App",w/2,151,13,colors.accent,0);
+  }
+  var timeDraft = null, timeField = 0, timeError = null;
+  var timeLabels = ["Anno", "Mese", "Giorno", "Ora", "Minuti"];
+  function beginLocalTime() {
+    try {
+      if (!node.readClock || !node.setLocalClock) throw new Error("Aggiorna Vera Node");
+      var now = new Date();
+      timeDraft = {parts: [Math.max(2020,Math.min(2099,now.getFullYear())),now.getMonth()+1,now.getDate(),now.getHours(),now.getMinutes()],
+        timezoneMinutes: -now.getTimezoneOffset(), snapshot: node.readClock()};
+      timeField = 0; timeError = null; openPage("time-edit");
+    } catch (e) { timeError = "Controllo ora non disponibile"; openPage("time-result"); }
+  }
+  function timeTarget() {
+    var p=timeDraft.parts, leap=p[0]%4===0 && (p[0]%100!==0 || p[0]%400===0);
+    var days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+    if(p[1]<1 || p[1]>12 || p[2]<1 || p[2]>days[p[1]-1])throw new Error("Data non valida");
+    // Espruino 2v29 has Date.parse, but no Date.UTC or getUTC* methods.
+    var utc=Date.parse(p[0]+"-"+("0"+p[1]).slice(-2)+"-"+("0"+p[2]).slice(-2)+"T"+
+      ("0"+p[3]).slice(-2)+":"+("0"+p[4]).slice(-2)+":00Z");
+    if(!isFinite(utc))throw new Error("Data non valida");
+    return utc-timeDraft.timezoneMinutes*60000;
+  }
+  function localTimePage(w) {
+    pageHeader(page === "time-edit" ? timeLabels[timeField] : "Ora e data");
+    if(page === "time-result") {
+      icon("clock",w/2,55,timeError ? colors.warning : colors.success);
+      text(timeError || "Ora impostata",w/2,82,18,timeError ? colors.warning : colors.success,0);
+      text("Verifica con Vera App",w/2,113,16,colors.text,0);
+      button(8,137,168,174,"Indietro",18); return;
+    }
+    var p=timeDraft.parts;
+    if(page === "time-edit") {
+      text((timeField>0 && p[timeField]<10 ? "0" : "")+p[timeField],w/2,timeError ? 40 : 43,timeError ? 30 : 37,colors.text,0);
+      if(timeError)text(timeError,w/2,74,12,colors.warning,0);
+      button(8,88,76,129,"-",28); button(100,88,168,129,"+",28);
+      button(8,137,168,174,timeField===4 ? "Riepilogo" : "Avanti",18); return;
+    }
+    text(p[2]+" / "+p[1]+" / "+p[0],w/2,40,21,colors.text,0);
+    text(("0"+p[3]).slice(-2)+":"+("0"+p[4]).slice(-2),w/2,68,29,colors.text,0);
+    text(timeError || "Orario manuale",w/2,105,16,colors.warning,0);
+    text("Da verificare con Vera",w/2,123,12,colors.text,0);
+    button(8,141,168,175,"Conferma ora",18);
+  }
+  function changeTimePart(direction) {
+    var limits=[[2020,2099],[1,12],[1,31],[0,23],[0,59]], range=limits[timeField];
+    timeDraft.parts[timeField]+=direction;
+    if(timeDraft.parts[timeField]<range[0])timeDraft.parts[timeField]=range[1];
+    if(timeDraft.parts[timeField]>range[1])timeDraft.parts[timeField]=range[0];
+    timeError=null; draw(ui);
+  }
+  function applyLocalTime() {
+    try {
+      var snapshot=timeDraft.snapshot;
+      node.setLocalClock({utcMs:timeTarget(),timezoneMinutes:timeDraft.timezoneMinutes,
+        epoch:snapshot.epoch,boot:snapshot.boot,revision:snapshot.revision});
+      timeError=null;setPage("time-result");
+    } catch(e) {
+      timeError=e.message === "Data non valida" ? "Data non valida" : "Esito da verificare";
+      if(timeError === "Data non valida"){timeField=2;setPage("time-edit");}
+      else setPage("time-result");
+    }
   }
   function batteryPage(w) {
     pageHeader("Batteria");
@@ -245,6 +314,19 @@
   function adminPage(w) {
     var stats=sampleStats();
     pageHeader("Elimina dati");
+    var admin=node.administration && node.administration.status();
+    if(admin && admin.executionEnabled) {
+      var verifying=admin.phase === "verifying",busy=admin.phase === "running" || verifying;
+      icon("admin",26,51,colors.warning);
+      text(verifying ? "Verifica firma" : busy ? "Cancellazione" : admin.phase === "completed" ? "Completata" : typeof admin.total==="number" ? "Da cancellare" : "Campioni",105,39,17,colors.warning,0,112);
+      text(verifying ? (admin.verificationPercent||0)+"%" : typeof admin.total === "number" ? (admin.removed===null ? "--" : admin.removed)+" / "+admin.total : stats.stored+" in memoria",w/2,72,23,colors.text,0);
+      text(verifying ? "Controllo permesso" : admin.error ? "Da verificare" : admin.phase === "confirmation" ? "Anche non trasferiti" : admin.phase === "awaiting_authorization" ? "Autorizza da Vera App" : busy ? "Non spegnere" : "Profilo conservato",w/2,105,15,colors.text,0);
+      if(admin.phase === "confirmation")button(8,137,168,174,"Verifica e cancella",16);
+      else if(admin.phase === "interrupted" && admin.pending)button(8,137,168,174,"Riprendi",18);
+      else if(verifying && !admin.pending)button(8,137,168,174,"Annulla verifica",16);
+      else if(!busy)button(8,137,168,174,"Indietro",18);
+      return;
+    }
     icon("memory",26,53,colors.warning);
     text("Tutti i campioni",105,40,17,colors.warning,0,112);
     text(String(stats.stored)+" in memoria",w/2,74,22,colors.text,0);
@@ -393,6 +475,7 @@
   }
   function draw(screen) {
     if (disposed || screen.mode === "off") return;
+    if (["time-edit","time-confirm","time-result"].includes(page) && !screen.alert) {localTimePage(g.getWidth());return;}
     g.reset().setBgColor(colors.bg).clear();
     consentFrame = false;
     var w = g.getWidth(), h = g.getHeight(), battery = E.getBattery();
@@ -449,7 +532,7 @@
           lines[lines.length - 1] += (lines[lines.length - 1] ? " " : "") + word;
         });
         lines.slice(0, 2).forEach(function(line, i) { text(line, w / 2, 63 + i * 25, 20, colors.text, 0); });
-        text("Utente " + state.consent.user.slice(-6), w / 2, 116, 14, colors.muted, 0);
+        text(state.consent.purpose==="display" ? "Solo display" : "Utente " + state.consent.user.slice(-6), w / 2, 116, 14, colors.muted, 0);
         ["yes", "no"].forEach(function(choice, i) {
           var x = i ? w / 2 + 4 : 8, x2 = i ? w - 9 : w / 2 - 4;
           g.setColor(colors.text).fillRect(x, 134, x2, h - 2);
@@ -486,7 +569,7 @@
     text(screen.mode === "pinned" ? "Fisso" : "10 s", 146, 165, 10, colors.text, 0);
 
   }
-  ui = new core.DisplayState(clock, draw, power, {timeout: 10000, doubleMs: 400, doubleOnMs: 700});
+  ui = new core.DisplayState(clock, draw, power, {timeout: displayValues.standbySeconds * 1000, doubleMs: 400, doubleOnMs: 700});
   cues = new core.Cues(clock, {
     light: function(on) {
       var visible = !!(ui && ui.mode !== "off");
@@ -532,14 +615,29 @@
     }
     if (state.consent && !ui.alert) {
       present({id: state.consent.id, channel: "consent", severity: "warning",
-        presentation: {mode: "question", question: "Consentire Vera App?", light: false, sound: false,
+        presentation: {mode: "question", question: state.consent.purpose==="display" ? "Modificare display?" : "Consentire Vera App?", light: false, sound: false,
           vibration: false, dismiss: "either", repeats: 1, pulseMs: 150}}); return;
     }
     if (state.queue.length && !ui.alert) { present(state.queue[0]); return; }
     if (ui.mode !== "off" && !redrawTimer) redrawTimer = setTimeout(function() { redrawTimer = undefined; draw(ui); }, 2000);
   }
+  var unsubscribeDisplay=displaySettings.onChange(function(value){
+    displayValues=value;
+    var changedStyle=style!==value.effect; style=value.effect;
+    ui.setTimeoutSeconds(value.standbySeconds);
+    if(ui.mode!=="off") {
+      Bangle.setLCDBrightness(value.brightnessPercent/100);
+      if(changedStyle){previousPulse=undefined;startAnimation(true);}
+      draw(ui);
+    }
+  });
   var observedClockRevision = state.clockRevision;
+  var adminPinnedByOperation=false;
   var unsubscribe = node.onChange(function() {
+    var admin=node.administration && node.administration.status();
+    var adminActive=page==="admin" && admin && (admin.phase==="verifying" || admin.phase==="running");
+    if(adminActive && !ui.alert && ui.mode==="temporary"){adminPinnedByOperation=true;ui.show("pinned");}
+    else if(adminPinnedByOperation && !adminActive){adminPinnedByOperation=false;if(!ui.alert && ui.mode==="pinned")ui.show("temporary");}
     if (observedClockRevision !== state.clockRevision) {
       observedClockRevision = state.clockRevision; lastTap = 0; pressedAt = undefined;
       if (ui.click !== null) clearTimeout(ui.click);
@@ -644,15 +742,34 @@
           else if (inside(point, 100, 86, 168, 126)) candidate = (candidate + 1) % styles.length;
           else if (inside(point, 8, 134, 168, 174)) {
             try {
-              storage.write("veranode.face.json", JSON.stringify({style: styles[candidate]}));
-              if ((storage.readJSON("veranode.face.json", 1) || {}).style !== styles[candidate]) throw new Error("Readback");
+              var currentDisplay=displaySettings.read();
+              displaySettings.set({expectedRevision:currentDisplay.revision,operationId:"local-"+Date.now(),values:{
+                brightnessPercent:currentDisplay.brightnessPercent,standbySeconds:currentDisplay.standbySeconds,effect:styles[candidate]}});
               style = styles[candidate]; styleError = false; home(); return;
             } catch (e) { styleError = true; }
           }
           draw(ui);
         } else if (page === "bluetooth") {
           if (inside(point, 8, 118, 168, 156)) {if(state.bleEnabled !== false)openPage("ble-confirm");else toggleConnections();}
-        } else if (["admin","time","software","battery"].includes(page)) {
+        } else if (page === "time") {
+          if(inside(point,8,103,168,141))beginLocalTime();
+        } else if (page === "time-edit") {
+          if(inside(point,8,88,76,129))changeTimePart(-1);
+          else if(inside(point,100,88,168,129))changeTimePart(1);
+          else if(inside(point,8,137,168,174)){if(timeField<4){timeField++;draw(ui);}else setPage("time-confirm");}
+        } else if (page === "time-confirm") {
+          if(inside(point,8,141,168,175))applyLocalTime();
+        } else if (page === "time-result") {
+          if(inside(point,8,137,168,174))back();
+        } else if(page === "admin") {
+          var admin=node.administration && node.administration.status();
+          if(admin && admin.executionEnabled && inside(point,8,137,168,174)) {
+            if(admin.phase === "confirmation")node.administration.confirm();
+            else if(admin.phase === "interrupted" && admin.pending)node.administration.resume();
+            else if(admin.phase!=="running"){node.administration.cancel();back();}
+            draw(ui);
+          }
+        } else if (["software","battery"].includes(page)) {
           return;
         } else if (page !== "clock") {
           if (inside(point, 8, 134, 168, 174)) back();
@@ -685,7 +802,7 @@
     },
     remove: function() {
       if (ui.alert && ui.alert.channel === "consent") traceConsent("ui-removed");
-      disposed = true; unsubscribe(); ui.dispose();
+      disposed = true; unsubscribeDisplay(); unsubscribe(); ui.dispose();
       Bangle.removeListener("charging", chargingChanged);
       Bangle.removeListener("lock", lockedChanged);
       Bangle.removeListener("lcdPower", lcdChanged);

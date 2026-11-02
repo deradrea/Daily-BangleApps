@@ -233,3 +233,28 @@ Generazione: `node bin/build-veranode-release.cjs`. Il builder produce un pacche
 Questo candidato rimane di sviluppo, first-install-only e non collaudato fisicamente. Non sostituisce il pacchetto c212 già approvato, non autorizza upgrade conservativi o reset e non abilita la cancellazione amministrativa. Il PIN personale viene gestito da Vera Web; autorizzazione verificabile dal Bangle, transazione di cancellazione e modello di accesso UART restano blocchi espliciti. Nessun PIN predefinito o locale può sostituirli.
 
 Rapporto completo: `vera-mobile/docs/BANGLE-REVISIONE-CANDIDATO-2026-10-20.md`. Il collaudo fisico di 24 ore rimane sospeso.
+
+
+## Preferenze display da Vera App (candidato 2 novembre 2026)
+
+Il runtime espone `displaySettings`, con file dedicato `veranode.display.json`.
+Luminosità 10–100%, standby 5/10/15/30/60/120s ed effetto cycle/pulse/trace/still
+sono separati da campioni e policy. Default 100%,10s; effetto legacy migrato in
+lettura. Nessuna scrittura sul semplice avvio/lettura. CAS expectedRevision,
+operationId e readback impediscono sovrascritture stale e ripetizioni dopo un
+esito incerto. Il display spento non viene acceso da una modifica; il quadrante
+si aggiorna soltanto se già visibile e conserva pagina/consenso/stato fissato.
+
+RPC `settings_get` e `settings_set` richiedono owner autorizzato oppure consenso
+fisico distinto `authorize_display`, MAC esatto e BLE cifrato. Il consenso display
+amministrativo dura 5 minuti tramite timer indipendente dall’orario e termina al
+disconnect/revoke; non permette status, campioni/ACK, orario, policy o erase.
+Il token amministrativo server rimane nell’app: non viene inviato o dichiarato
+verificato crittograficamente dal watch. Nessun PIN in flash. Il formato JSON
+di acquisizione e le frequenze sensori non cambiano.
+
+Test locali: `node --test test/veranode/*.test.cjs`; prova archivio nel vero
+interprete2v29: `node bin/test-veranode-display-espruino.cjs` con variabile
+VERA_ESPRUINO_EMULATOR_DIR sul bundle fissato dal manifest dei test. Nessun BLE
+fisico in questi comandi. Il candidato generato non equivale ad installazione
+hardware o pubblicazione del catalogo.

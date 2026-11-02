@@ -31,6 +31,19 @@ test('consent UI failure returns a generic error, clears pending consent and sta
   assert.equal(f.server.decide(true), false);
 });
 
+test('authorized configuration readback identifies the installed context without changing sensor records',()=>{
+ const f=setup(),data=policy();f.node.installPolicy(data,true);
+ f.command({id:'config-auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});
+ f.server.decide(true);f.responses();const before=f.node.samples.next;
+ f.command({id:'config-status',op:'status'});const reply=f.responses()[0];
+ assert.equal(reply.result.configuration.user,data.user);
+ assert.equal(reply.result.configuration.scope,data.scope);
+ assert.equal(reply.result.configuration.revision,data.revision);
+ assert.equal(reply.result.configuration.expiresAt,data.expiresAt);
+ assert.equal(typeof reply.result.configuration.stale,'boolean');assert.equal(f.node.samples.next,before);
+ f.server.dispose();f.node.dispose();
+});
+
 test('a visible unanswered consent expires at 60 seconds and a late Yes cannot authorize', () => {
   const f=setup(), data=policy();
   f.command({id:'timed-auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});
@@ -190,4 +203,55 @@ test('opt-in integrity trailer protects exact ASCII JSON and conservative retrie
  assert.ok(f.output.every(x=>x.length<=20));text=f.output.join('').trim();body=text.slice(0,-9);
  assert.equal(text.slice(-9),'#'+hash(body));assert.equal(JSON.parse(body).result.mac,data.mac);
  f.server.dispose();f.node.dispose();
+});
+
+test('administrative commands are closed by default and no BLE operation confirms deletion',()=>{
+ const f=setup(),data=policy();
+ f.command({id:'auth-admin',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});f.server.decide(true);f.responses();
+ for(const op of ['admin_status','admin_challenge','admin_offer']) {
+   f.command({id:'closed-'+op,op});assert.equal(f.responses()[0].ok,false);
+ }
+ const calls=[];f.node.administration={status:()=>({executionEnabled:true}),prepare:id=>{calls.push(id);return {operationId:id};},
+   plan:()=>[],offer:()=>calls.push('offer'),confirm:()=>calls.push('confirm')};
+ f.command({id:'challenge',op:'admin_challenge',operationId:'op'});assert.equal(f.responses()[0].ok,true);
+ f.command({id:'offer',op:'admin_offer',grant:{}});assert.equal(f.responses()[0].result.confirmationRequired,true);
+ f.command({id:'execute',op:'admin_confirm'});assert.equal(f.responses()[0].ok,false);
+ assert.deepEqual(calls,['op','offer']);f.server.dispose();f.node.dispose();
+});
+test('96-segment administrative plan stays under the existing frame bound and pages belong to one operation',()=>{
+ const f=setup(),data=policy(),rows=Array.from({length:96},(_,i)=>({name:'veranode.s'+i,count:32,last:(i+1)*32,hash:'a'.repeat(64)}));
+ f.command({id:'auth-plan',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});f.server.decide(true);f.responses();
+ f.node.administration={status:()=>({executionEnabled:true}),prepare:id=>({operationId:id}),plan:id=>{if(id!=='op')throw Error('Wrong operation');return rows;}};
+ f.command({id:'first',op:'admin_challenge',operationId:'op'});const first=f.responses()[0].result;
+ assert.equal(first.plan_count,96);assert.equal(first.segment_plan.length,16);assert.equal(first.next_offset,16);assert.ok(JSON.stringify(first).length<8183);
+ const combined=[...first.segment_plan];
+ for(let offset=16;offset<96;offset+=16){f.command({id:'page'+offset,op:'admin_plan',operationId:'op',offset});const r=f.responses()[0];assert.equal(r.ok,true);assert.ok(JSON.stringify(r).length<8183);combined.push(...r.result.segment_plan);}
+ assert.deepEqual(combined,rows);
+ for(const command of [{operationId:'other',offset:16},{operationId:'op',offset:-1},{operationId:'op',offset:17},{operationId:'op',offset:96}]){
+  f.command({id:'invalid',op:'admin_plan',...command});assert.equal(f.responses()[0].ok,false);
+ }
+ f.server.dispose();f.node.dispose();
+});
+
+test('display settings are authorized, revision checked and independent of sample custody',()=>{
+ const f=setup(),data=policy();f.command({id:'denied',op:'settings_get'});assert.equal(f.responses()[0].ok,false);
+ f.command({id:'auth-display',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});f.server.decide(true);f.responses();
+ const before=JSON.stringify(f.node.samples.checkpoint);f.command({id:'display-read',op:'settings_get'});assert.equal(f.responses()[0].result.brightnessPercent,100);
+ f.command({id:'display-save',op:'settings_set',operationId:'display-op',expectedRevision:0,values:{brightnessPercent:60,standbySeconds:30,effect:'pulse'}});
+ assert.equal(f.responses()[0].result.revision,1);assert.equal(JSON.stringify(f.node.samples.checkpoint),before);
+ f.server.reset();f.command({id:'after-reset',op:'settings_get'});assert.equal(f.responses()[0].ok,false);f.server.dispose();f.node.dispose();
+});
+
+test('physical display-only administrator consent never opens journals or owner configuration',()=>{
+ const f=setup(),data=policy();f.node.installPolicy(data,true);
+ f.command({id:'display-admin',op:'authorize_display',mac:data.mac});assert.equal(f.consent().purpose,'display');f.server.decide(true);assert.equal(f.responses()[0].result.authorized,true);
+ for(const op of ['status','batch','ack','clock','clock_sync','profile','admin_offer']){f.command({id:'blocked-'+op,op});assert.equal(f.responses()[0].ok,false);}
+ f.command({id:'only-display',op:'settings_get'});assert.equal(f.responses()[0].result.schema,1);
+ f.server.reset();f.command({id:'revoked',op:'settings_get'});assert.equal(f.responses()[0].ok,false);f.server.dispose();f.node.dispose();
+});
+
+test('display-only consent has a timer expiry independent of wall-clock changes',()=>{
+ const f=setup(),data=policy();f.command({id:'short-session',op:'authorize_display',mac:data.mac});f.server.decide(true);f.responses();
+ f.p.clock.advance(300001);f.command({id:'expired-display',op:'settings_get'});assert.equal(f.responses()[0].ok,false);
+ f.server.dispose();f.node.dispose();assert.equal(f.p.clock.timers.size,0);
 });
