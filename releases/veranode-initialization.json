@@ -15,6 +15,6 @@
   "requiresMobilePackageSupport": true,
   "promoteBackendCatalog": false,
   "hardwareTestPerformed": false,
-  "minimumMobileVersion": "1.0.157",
+  "minimumMobileVersion": "1.0.158",
   "distributionPolicy": "initialization-from-zero-after-user-factory-reset"
 }
