@@ -1,9 +1,9 @@
-# Bangle / Vera Node: responsabilitÃ  e rilascio
+# Bangle / Vera Node: responsabilità e rilascio
 
 Decisione dell'utente del 20 ottobre 2026. Questa regola sostituisce eventuali
 accordi precedenti che assegnavano interventi sul software Bangle a Vera Web.
 
-## ResponsabilitÃ 
+## Responsabilità
 
 La chat Vera Mobile (titolo attuale: Vera Moble) gestisce integralmente il software
 Bangle: progettazione, Vera Node, quadrante e pagine, raccolta sensori, archivio
@@ -13,7 +13,7 @@ versioni, commit, push, tag e pubblicazione delle release GitHub.
 Anche la gestione del Bangle nell'app mobile viene sviluppata in questa chat.
 
 La chat Vera Web non modifica codice eseguito sul Bangle, copie del runtime,
-manifest generati, builder o pacchetti. Non ricostruisce nÃ© pubblica release
+manifest generati, builder o pacchetti. Non ricostruisce né pubblica release
 Bangle su GitHub. Mantiene API, autorizzazioni, catalogo e pagine/trasporto BLE
 dell'installer Web come integrazione dei pacchetti prodotti dalla chat Mobile.
 I problemi del software dell'orologio vengono inoltrati alla chat Mobile per
@@ -28,7 +28,7 @@ la correzione e la pubblicazione di una nuova revisione.
 - Pubblicazione: commit, tag e asset della release GitHub gestiti da questa chat.
 - App e Web consumano gli stessi byte, con revisione, SHA-256 e provenienza
   verificabili. Le copie distribuite non sono una seconda fonte di sviluppo.
-- Vera Web puÃ² aggiornare il catalogo per rendere disponibile una release
+- Vera Web può aggiornare il catalogo per rendere disponibile una release
   pubblicata qui, senza modificarla o rigenerarla. Se servono modifiche al
   pacchetto, si richiede una nuova revisione a questa chat.
 - Una modifica alla documentazione non ricostruisce un artefatto immutabile e
@@ -46,7 +46,7 @@ I rilasci mantengono il JSON concordato e preservano dati e profilo secondo
 il tipo di operazione. Pubblicare un pacchetto non autorizza automaticamente
 formattazioni o altre operazioni distruttive sui dispositivi.
 
-## Ciclo corrente â€” 2 novembre 2026
+## Ciclo corrente — 2 novembre 2026
 
 Decisione utente: sviluppare e distribuire prima i pacchetti completi Vera Node,
 poi inizializzare da zero dopo ripristino di fabbrica eseguito dall'utente.
