@@ -41,7 +41,7 @@ exports.create=function(e){
     if(previousCheckpointDigest!==e.checkpointDigest())fail('Checkpoint cambiato prima della nuova esecuzione');
     var info=e.inspect();if(!info.compatible)fail('Modello o firmware non supportato');
     if(!integer(info.batteryPercent)||info.batteryPercent<=50||info.batteryPercent>100)fail('Carica il Bangle oltre il 50%');
-    if(!integer(info.freeBytes)||info.freeBytes<e.target.stagingBytes*2+65536)fail('Spazio insufficiente per staging e recupero');
+    if(!integer(info.freeBytes)||info.freeBytes<(e.target.minimumFreeBytes||e.target.stagingBytes*2+65536))fail('Spazio insufficiente per staging e recupero');
     state={protocol:1,binding:binding,targetFingerprint:e.target.fingerprint,phase:'prepared',staged:[],wipeConsumed:false,removed:0,wipeTotal:0,installed:0,bootCommitted:false,armed:0,activation:0,pending:null};
     e.replace(state,previousCheckpointDigest);e.invalidateBoot();loadError=null;upload=undefined;stagedVerified=false;paint();return status();
   }
