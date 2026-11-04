@@ -69,3 +69,23 @@ Correzione1.0.158: il download HTTP e la verifica del pacchetto usano la stessa
 lista di coppie revisione/hash e commit. La157 aggiornava il verificatore ma
 non il secondo elenco nel trasporto, fermandosi prima di qualsiasi accessoBLE.
 La versione minima effettiva per installare zero-f543 da Mobile è quindi158.
+
+
+## Allineamento della distribuzione — 3 novembre 2026
+
+Il pacchetto corrente e `veranode-zero-1-25ef42ed9ae86296`, con verifica nativa
+SHA-256 per blocchi ordinati da 1024 byte. Mobile minimo 1.0.160; versione
+consigliata 1.0.161, che presenta un solo percorso di inizializzazione e rimuove
+gli ingressi agli aggiornamenti del software Bangle.
+
+La 1.0.161 e disponibile nei Test interni Google Play. Il catalogo Vera Web
+serve lo stesso pacchetto ufficiale: download autenticato di 272013 byte e
+SHA-256 25ef42ed9ae862967532f55921665fd89aa1154a4d1783721489e87870d44c58,
+verificati dopo il deploy del commit 3aa2bca7b745b73cab1c06e15a272cc696f7acbd
+con pipeline 41672445771 conclusa con successo. I pacchetti storici restano
+immutabili; le pratiche esistenti conservano i riferimenti originari.
+
+Questi esiti attestano pubblicazione e allineamento. L'installazione Mobile
+sul Galaxy, il pacchetto letto nella nuova sessione e la prova fisica del
+F0:AA richiedono conferma separata. La verifica hardware di25ef non e ancora
+conclusa e il collaudo24ore resta sospeso. Nessun firmware modificato.

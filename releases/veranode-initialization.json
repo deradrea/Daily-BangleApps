@@ -1,6 +1,6 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "package-validated-awaiting-client",
+  "status": "published-client-and-catalog",
   "revision": "veranode-zero-1-25ef42ed9ae86296",
   "path": "dist/veranode-zero/veranode-zero-1-25ef42ed9ae86296/initialize.json",
   "sha256": "25ef42ed9ae862967532f55921665fd89aa1154a4d1783721489e87870d44c58",
@@ -16,5 +16,14 @@
   "promoteBackendCatalog": false,
   "hardwareTestPerformed": false,
   "minimumMobileVersion": "1.0.160",
-  "distributionPolicy": "initialization-from-zero-after-user-factory-reset"
+  "distributionPolicy": "initialization-from-zero-after-user-factory-reset",
+  "recommendedMobileVersion": "1.0.161",
+  "distributionEvidence": {
+    "mobileInternalVersion": "1.0.161",
+    "mobileInternalPublishedAt": "2026-11-03T17:39:00+01:00",
+    "webCommit": "3aa2bca7b745b73cab1c06e15a272cc696f7acbd",
+    "webPipeline": "https://github.com/daily-22-project/vera/actions/runs/41672445771",
+    "webAuthenticatedPackageBytes": 272013,
+    "webAuthenticatedPackageSha256": "25ef42ed9ae862967532f55921665fd89aa1154a4d1783721489e87870d44c58"
+  }
 }
