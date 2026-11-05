@@ -69,6 +69,18 @@ function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  return {files,sf,sfChunks,log,feedback,timers,intervals,drawn,bangle,prepare,stageAll,finish,boot,reboot:()=>boot(files.get('.boot0')===files.get('vz.recovery.js')),get p(){return provider;},get env(){return env;},get context(){return context;},set crash(n){crashAt=mutations+n;},set battery(n){battery=n;},set free(n){free=n;},set encrypted(v){encrypted=v;},set firmware(v){firmware=v;},get mutations(){return mutations;},set health(v){health=v;}};
 }
 
+test('the real maintenance entry executes recovery before the first removal without a simulated reboot',()=>{
+ const f=fixture('vera',payload,'app-confirmed');f.prepare();f.p.beginWipe(target.fingerprint);
+ const loaded=[];f.context.global.load=name=>{loaded.push(name);vm.runInContext(f.files.get(name),f.context);};
+ while(f.p.status().phase==='quarantining')f.p.step();
+ assert.equal(f.env.isolated(),false);assert.equal(f.p.status().removed,0);
+ assert.throws(()=>f.p.step(),/Recovery non isolata/);
+ for(const timer of f.timers.splice(0))timer();
+ assert.deepEqual(loaded,['vz.recovery.js']);assert.equal(f.env.isolated(),true);
+ assert.equal(f.context.global.VeraZeroUiReady,true);assert.equal(f.p.status().removed,0);
+ f.p.step();assert.equal(f.p.status().removed,1);
+});
+
 test('zero initialization works from factory, existing Vera, partial legacy and unknown boot without eraseAll',()=>{
  for(const mode of ['factory','vera','partial']){const f=fixture(mode),result=f.finish();assert.equal(result.phase,'complete');assert.equal(result.installed,22);assert.equal(result.wipeConsumed,true);assert.equal(f.sf.size,0);assert.equal(f.files.has('veranode.policy.json'),false);assert.equal(f.files.has('foreign.app.js'),false);assert.equal(f.files.get('setting.json'),payload['setting.json']);
   for(const [n,b]of Object.entries(payload))assert.equal(f.files.get(n),b,n);
