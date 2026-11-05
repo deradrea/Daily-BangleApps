@@ -1,6 +1,6 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "package-and-mobile-published-awaiting-backend-catalog",
+  "status": "published-client-and-catalog",
   "revision": "veranode-zero-1-8d26ef82f2868e47",
   "path": "dist/veranode-zero/veranode-zero-1-8d26ef82f2868e47/initialize.json",
   "sha256": "8d26ef82f2868e473749317645545bb73b0bbac5ed6966c43a0d823765e4a3f9",
@@ -30,7 +30,12 @@
     "playInternalReleaseId": 36,
     "playInternalStatus": "available-to-internal-testers",
     "galaxyInstalledVersion": "1.0.163",
-    "backendCatalogStatus": "pending-dependency-patch-and-deployment",
-    "offline24hTrial": "suspended"
+    "backendCatalogStatus": "active-and-resolver-verified",
+    "offline24hTrial": "suspended",
+    "webCommit": "9918a86181fbe154386779e905aeb8518d918041",
+    "webPipeline": "https://github.com/daily-22-project/vera/actions/runs/42069228311",
+    "webResolverPackageBytes": 272317,
+    "webResolverPackageSha256": "8d26ef82f2868e473749317645545bb73b0bbac5ed6966c43a0d823765e4a3f9",
+    "historical25efResumeOnly": true
   }
 }
