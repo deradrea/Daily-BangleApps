@@ -1,6 +1,6 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "package-release-prepared-awaiting-client-and-catalog",
+  "status": "package-and-mobile-published-awaiting-backend-catalog",
   "revision": "veranode-zero-1-8d26ef82f2868e47",
   "path": "dist/veranode-zero/veranode-zero-1-8d26ef82f2868e47/initialize.json",
   "sha256": "8d26ef82f2868e473749317645545bb73b0bbac5ed6966c43a0d823765e4a3f9",
@@ -23,6 +23,14 @@
     "localMobileTests": 811,
     "watchSourceTests": 39,
     "nativeInterpreter": "Espruino 2v29",
-    "physicalTest": "not-performed-for-this-release"
+    "physicalTest": "not-performed-for-this-release",
+    "packageRelease": "https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-zero-1-8d26ef82f2868e47",
+    "publicAssetsByteVerified": true,
+    "mobileRelease": "https://github.com/SmarteCommerceLab/vera-mobile/releases/tag/v1.0.163",
+    "playInternalReleaseId": 36,
+    "playInternalStatus": "available-to-internal-testers",
+    "galaxyInstalledVersion": "1.0.163",
+    "backendCatalogStatus": "pending-dependency-patch-and-deployment",
+    "offline24hTrial": "suspended"
   }
 }
