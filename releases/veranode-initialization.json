@@ -1,10 +1,10 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "published-client-and-catalog",
-  "revision": "veranode-zero-1-25ef42ed9ae86296",
-  "path": "dist/veranode-zero/veranode-zero-1-25ef42ed9ae86296/initialize.json",
-  "sha256": "25ef42ed9ae862967532f55921665fd89aa1154a4d1783721489e87870d44c58",
-  "sourceCommit": "7a7fd40c66eb268b01b58106dbbef7ff64a595a4",
+  "status": "package-release-prepared-awaiting-client-and-catalog",
+  "revision": "veranode-zero-1-8d26ef82f2868e47",
+  "path": "dist/veranode-zero/veranode-zero-1-8d26ef82f2868e47/initialize.json",
+  "sha256": "8d26ef82f2868e473749317645545bb73b0bbac5ed6966c43a0d823765e4a3f9",
+  "sourceCommit": "07d732a9ad3c752ef0b810ed3d2db52e6aa9cdab",
   "runtimeRevision": "veranode-0.2.0-dev-1ab4c48d08d2890d",
   "runtimePackageSha256": "63adcc01e7c114339961f468a524239c2176434c3a13d069059f30b52352a8c0",
   "board": "BANGLEJS2",
@@ -15,15 +15,14 @@
   "requiresMobilePackageSupport": true,
   "promoteBackendCatalog": false,
   "hardwareTestPerformed": false,
-  "minimumMobileVersion": "1.0.160",
+  "minimumMobileVersion": "1.0.163",
   "distributionPolicy": "initialization-from-zero-after-user-factory-reset",
-  "recommendedMobileVersion": "1.0.161",
+  "recommendedMobileVersion": "1.0.163",
   "distributionEvidence": {
-    "mobileInternalVersion": "1.0.161",
-    "mobileInternalPublishedAt": "2026-11-03T17:39:00+01:00",
-    "webCommit": "3aa2bca7b745b73cab1c06e15a272cc696f7acbd",
-    "webPipeline": "https://github.com/daily-22-project/vera/actions/runs/41672445771",
-    "webAuthenticatedPackageBytes": 272013,
-    "webAuthenticatedPackageSha256": "25ef42ed9ae862967532f55921665fd89aa1154a4d1783721489e87870d44c58"
+    "localMobileVersion": "1.0.163",
+    "localMobileTests": 811,
+    "watchSourceTests": 39,
+    "nativeInterpreter": "Espruino 2v29",
+    "physicalTest": "not-performed-for-this-release"
   }
 }
