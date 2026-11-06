@@ -1,0 +1,24 @@
+{
+  "schema": "vera-bangle-zero-source-manifest/1",
+  "sourceRepository": "https://github.com/deradrea/Daily-BangleApps",
+  "sourceCommit": "75c810bc95f32a471b5d401c93f229b2b79136f9",
+  "files": {
+    "dist/veranode-initialize/veranode-initialize-1-866f85f37a599201/initialize.json": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+    "initialization/zero/provider.js": "7015b9607b554aa02d760586dcd607eaa6c07f03f592406b4f510c68404d7145",
+    "initialization/zero/integrity.js": "102e00088e35e854e404f5b78ffabf32616cf9e04c48a81a05fcba42241d5da0",
+    "initialization/zero/platform.js": "7156373b18753f00e325b57f91fa4bf1d547663e03bbc3e69a61a3125cfa5fe7",
+    "initialization/zero/recovery.js": "9cfc3d1bd7c52e9b1789d8a480d7acc84ce1ab9ae6ad7c29f58beed58d31ee1c",
+    "initialization/zero/app.js": "1570ba48611bc45274e174a1f9fbe5fb64ead177d4490cf810eb645707346a61",
+    "initialization/zero/display.js": "0fae857665ac001a82ba8c649aadadec701ced36db366d3c6e4a04a7618220e5",
+    "initialization/zero/guard.js": "81ae1b14a5f8566669770c242f7eeef61172c0f30863d2fa7d4b3a26570e45d1",
+    "bin/veranode-runtime-selection.cjs": "4f82307b4d05ff0266c4c94890380720541b0635c96e4740add876d265f436c0",
+    "releases/veranode-runtime.json": "791c42f5bd9a0fe8200cd1bcf4b37852f8d47808c7a9e6d0905acbf5548c839a",
+    "dist/veranode/veranode-0.2.0-dev-1ab4c48d08d2890d/package.json": "63adcc01e7c114339961f468a524239c2176434c3a13d069059f30b52352a8c0",
+    "initialization/zero/dedicated-release.json": "1ea4fa3c82920129658de1de3f80e0c1f862c996cafcbd42a57d625fd2e91625",
+    "bin/veranode-dedicated-target.cjs": "535671223876e139a1be3d2bdcb3e95dae28b36f7ca70e3089199bf794a2e8d7",
+    "initialization/zero/launcher.js": "bf6b205d9e1fce34a97e929cb2ee52828db48fb063fd012ed115c266568776bf",
+    "bin/build-veranode-zero.cjs": "e13c8538b37337f4b77c73a42edcbdfcfd9acc10c7affe01d3ef0cb586c05061"
+  },
+  "parentInitializeSha256": "866f85f37a599201e0fa275ccbd8cad88604f0a3eb373f91f780571b8a0f6ac4",
+  "runtimePackageSha256": "63adcc01e7c114339961f468a524239c2176434c3a13d069059f30b52352a8c0"
+}
