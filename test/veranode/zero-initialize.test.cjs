@@ -49,7 +49,7 @@ function fixture(mode='factory',selectedPayload=payload,authorizationMode){
  function boot(isolated){
   const cache={};const global={};if(isolated)global.VeraZeroRecovery=true;
   const load=n=>{if(n==='vz.target.js')return localTarget;if(n==='Storage')return storage;if(n==='crypto')return {SHA256:b=>crypto.createHash('sha256').update(Buffer.from(b,'latin1')).digest()};if(cache[n])return cache[n];const code=files.get(n);if(code===undefined)throw Error('Module absent '+n);const module={exports:{}};context.__module=module;vm.runInContext('(function(exports){'+code+'\n})(__module.exports)',context);return cache[n]=module.exports;};
-  context=vm.createContext({global,require:load,exports:{},Uint8Array,Number:{},getTime:()=>clockMs/1000,setTime:sec=>{clockMs=sec*1000;},process:{env:{BOARD:'BANGLEJS2',VERSION:firmware}},NRF:{getAddress:()=>binding.mac+' random',getSecurityStatus:()=>({connected:true,encrypted,bonded:encrypted}),startBonding:()=>Promise.resolve(),setServices:()=>{},on:()=>{}},Bluetooth:{setConsole:()=>{}},E:{getBattery:()=>battery,showMessage:s=>drawn.push(s),toString:b=>Buffer.from(b).toString('latin1')},Bangle:bangle,g:graphics,atob:s=>Buffer.from(s,'base64').toString('latin1'),setTimeout:fn=>{timers.push(fn);return timers.length;},setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval:()=>{}});
+  context=vm.createContext({global,require:load,exports:{},Uint8Array,Number:{},getTime:()=>clockMs/1000,setTime:sec=>{clockMs=sec*1000;},process:{env:{BOARD:'BANGLEJS2',VERSION:firmware}},NRF:{getAddress:()=>binding.mac+' random',getSecurityStatus:()=>({connected:true,encrypted,bonded:encrypted}),startBonding:()=>Promise.resolve(),setServices:()=>{},on:()=>{}},Bluetooth:{setConsole:()=>{}},E:{getBattery:()=>battery,showMessage:s=>drawn.push(s),toString:b=>Buffer.from(b).toString('latin1')},Bangle:bangle,g:graphics,atob:s=>Buffer.from(s,'base64').toString('latin1'),btoa:s=>Buffer.from(s,'latin1').toString('base64'),setTimeout:fn=>{timers.push(fn);return timers.length;},setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval:()=>{}});
   global.load=()=>{};env=load('vz.platform.js').create();const progress=env.progress;env.progress=(...p)=>{feedback.push(p);progress(...p);};env.health=()=>health;provider=load('vz.provider.js').create(env);var st=provider.status();if(st.phase==='activation-pending'||st.phase==='complete'){global.VeraZeroBootGeneration=st.binding.generation;global.VeraZeroBootExecutionId=st.binding.executionId;}
  }
  boot(false);
@@ -99,6 +99,22 @@ test('a failed recovery entry can be retried without starting another wipe',()=>
  assert.equal(f.env.isolated(),true);
  assert.equal(f.p.status().checkpointDigest,before);
  f.p.step();assert.equal(f.p.status().removed,1);
+});
+
+test('final install and activation use bounded writes even for large files',()=>{
+ const f=fixture('factory',payload,'app-confirmed');
+ f.prepare();f.p.beginWipe(target.fingerprint);
+ while(f.p.status().phase==='quarantining')f.p.step();
+ f.boot(true);f.p.recover(binding);
+ while(f.p.status().phase==='wiping')f.p.step();
+ const storage=f.context.require('Storage'),write=storage.write;
+ const targetNames=Object.keys(payload);
+ storage.write=(name,part,offset,size)=>{
+  if(targetNames.includes(name)&&part.length>384)throw Error("Can't get pointer to data to write");
+  return write(name,part,offset,size);
+ };
+ assert.equal(f.finish().phase,'complete');
+ for(const [name,bytes]of Object.entries(payload))assert.equal(f.files.get(name),bytes,name);
 });
 
 test('zero initialization works from factory, existing Vera, partial legacy and unknown boot without eraseAll',()=>{

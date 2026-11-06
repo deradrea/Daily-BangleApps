@@ -3,10 +3,13 @@ const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_pro
 const root=path.resolve(__dirname,'..');
 const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 const sourceCommit=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
-const sourcePath='initialization/zero/repair-storagefile.js';
+const installing=process.argv.includes('--install-blocks');
+const sourcePath=installing?'initialization/zero/repair-install-blocks.js':'initialization/zero/repair-storagefile.js';
 const source=cp.execFileSync('git',['show',sourceCommit+':'+sourcePath],{cwd:root});
 const manifest={schema:'vera-zero-ram-repair/1',sourceCommit,mode:'ram-only',
-  appliesTo:{packageSha256:'2c74ed8520dc74293b09521bea9b644aaa44b28ae2140ebf9c0a1fe19f5a06de',targetFingerprint:'83b51c1628cc4c05f5670e29568d87ce8628f601ffda8b058c18839253b28733',board:'BANGLEJS2',firmware:'2v29',phase:'wiping',pendingKind:'storage-chunk'},
+  appliesTo:installing?
+    {packageSha256:'8d26ef82f2868e473749317645545bb73b0bbac5ed6966c43a0d823765e4a3f9',targetFingerprint:'2a58e379f2432999e55a52508d4be2673cdf97247407973c583550450c36db1c',board:'BANGLEJS2',firmware:'2v29',phase:'installing',pendingKind:'install'}:
+    {packageSha256:'2c74ed8520dc74293b09521bea9b644aaa44b28ae2140ebf9c0a1fe19f5a06de',targetFingerprint:'83b51c1628cc4c05f5670e29568d87ce8628f601ffda8b058c18839253b28733',board:'BANGLEJS2',firmware:'2v29',phase:'wiping',pendingKind:'storage-chunk'},
   permission:'recover',requiresStagedFiles:14,
   changes:{targetFiles:false,packageHash:false,binding:false,ledger:false,persistentSupport:false},
   source:{path:sourcePath,sha256:hash(source),size:source.length,base64:source.toString('base64')}};

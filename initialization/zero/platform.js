@@ -13,6 +13,15 @@ exports.create=function(){
   function checkpointDigest(){return hash(canonical([raw('vz.state0')||null,raw('vz.state1')||null]));}
   function load(){var found=false,rows=[];[0,1].forEach(function(i){var b=raw('vz.state'+i);if(b===undefined)return;found=true;try{var v=JSON.parse(b);if(hash(v.body)!==v.sha256)return;var st=JSON.parse(v.body);if(typeof st.sequence!=='number'||!isFinite(st.sequence)||Math.floor(st.sequence)!==st.sequence||st.sequence<0||st.sequence>9007199254740000)return;rows.push(st);}catch(err){}});rows.sort(function(a,b){return b.sequence-a.sequence;});if(!rows.length){if(found)throw Error('Checkpoint corrotto: richiedi nuova conferma');return null;}sequence=rows[0].sequence;return rows[0];}
   function write(n,b,o,size){if(s.getStats().freeBytes<b.length+(size||0)+32768)throw Error('Spazio insufficiente, recupero conservato');if(s.write(n,b,o,size)===false)throw Error('Scrittura fallita');}
+  // Storage.read returns a flash-backed string. Recreate each bounded block
+  // in RAM before writing it, as the BLE staging path already does.
+  function copyStaged(source,file){
+    for(var at=0;at<file.size;at+=384){
+      var size=Math.min(384,file.size-at),part=raw(source,at,size);
+      if(typeof part!=='string'||part.length!==size)throw Error('Blocco staging non leggibile');
+      write(file.name,atob(btoa(part)),at,at===0?file.size:undefined);
+    }
+  }
   function save(st){st.sequence=++sequence;var body=JSON.stringify(st),b=JSON.stringify({body:body,sha256:hash(body)}),name='vz.state'+sequence%2;write(name,b);if(raw(name)!==b)throw Error('Checkpoint non verificato');}
   function replace(st,expected){if(checkpointDigest()!==expected)throw Error('Checkpoint cambiato');save(st);save(st);}
   function streamChunks(name){var normal=s.list(undefined,{sf:false});return s.list().filter(function(n){return !normal.includes(n)&&n.length===name.length+1&&n.slice(0,-1)===name;});}
@@ -25,7 +34,7 @@ exports.create=function(){
   function erase(f){if(own(f.name)||temporaryBoot(f.name))throw Error('Supporto recupero protetto');if(f.kind==='normal'){s.erase(f.name);return;}if(f.kind!=='storage-chunk')throw Error('Tipo cancellazione non previsto');if(!streamChunks(f.name).length)return;s.open(f.name,'r').erase();streamChunks(f.name).forEach(function(n){s.erase(n);});if(streamChunks(f.name).length)throw Error('Archivio non rimosso');}
   function securityStatus(){var st=NRF.getSecurityStatus();return {connected:!!st.connected,encrypted:!!st.encrypted,bonded:!!st.bonded};}
   function requestSecurity(){var st=securityStatus();if(!st.connected)throw Error('Bluetooth scollegato');if(!st.encrypted){if(typeof NRF.startBonding!=='function')throw Error('Associazione non disponibile');NRF.startBonding(false).then(function(){},function(){});}return securityStatus();}
-  return {unbase64:atob,target:t,hash:hash,matches:integrity.matches,prefixDigest:integrity.prefix,canonical:canonical,read:raw,write:write,load:load,save:save,replace:replace,checkpointDigest:checkpointDigest,currentBinding:function(){var st=load();return st&&st.binding;},
+  return {unbase64:atob,target:t,hash:hash,matches:integrity.matches,prefixDigest:integrity.prefix,canonical:canonical,read:raw,write:write,copyStaged:copyStaged,load:load,save:save,replace:replace,checkpointDigest:checkpointDigest,currentBinding:function(){var st=load();return st&&st.binding;},
     supportIntact:function(){return t.supportFiles.every(function(f){return integrity.matches(f.name,f);});},
     bootEntries:bootEntries,cleanupBootEntries:cleanupBootEntries,arm:arm,inventory:inventory,countRemovable:function(){return removable().length;},nextRemovable:function(){return removable()[0];},exists:exists,erase:erase,
     unexpected:function(){return inventory().some(function(f){return f.kind!=='normal'||(!own(f.name)&&!temporaryBoot(f.name)&&!t.files.some(function(x){return x.name===f.name;}));});},

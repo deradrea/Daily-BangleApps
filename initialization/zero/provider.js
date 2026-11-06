@@ -102,7 +102,7 @@ exports.create=function(e){
       if(state.installed>=targets.length){verify();return status();}
       var target=targets[state.installed],i=e.target.files.findIndex(function(f){return f.name===target.name;});
       if(!matches(stageName(i),target))fail('Staging file corrotto, ripeti il caricamento');state.pending={kind:'install',name:target.name};save();
-      if(!matches(target.name,target)){e.write(target.name,e.read(stageName(i)));if(!matches(target.name,target))fail('Installazione non verificata');}
+      if(!matches(target.name,target)){e.copyStaged(stageName(i),target);if(!matches(target.name,target))fail('Installazione non verificata');}
       state.installed++;state.pending=null;save();paint();return status();
     }
     if(state.phase==='verified')return status();fail('Usa attivazione o ripresa della stessa esecuzione');
@@ -126,7 +126,7 @@ exports.create=function(e){
     e.invalidateBoot();state.phase='activating';save();paint();
     while(state.activation<e.cleanupBootEntries.length){var n=e.cleanupBootEntries[state.activation];state.pending={kind:'activation',name:n};save();e.removeBoot(n);state.activation++;state.pending=null;save();}
     var i=e.target.files.findIndex(function(f){return f.name==='.boot0';}),f=file(i);
-    if(!matches(stageName(i),f))fail('Staging avvio corrotto');if(!matches(f.name,f)){e.write(f.name,e.read(stageName(i)));if(!matches(f.name,f))fail('Avvio non verificato');}
+    if(!matches(stageName(i),f))fail('Staging avvio corrotto');if(!matches(f.name,f)){e.copyStaged(stageName(i),f);if(!matches(f.name,f))fail('Avvio non verificato');}
     state.bootCommitted=true;state.phase='activation-pending';save();paint();e.activate();return {activationScheduled:true,softwareReady:false,binding:state.binding};
   }
   function confirm(binding){
