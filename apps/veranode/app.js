@@ -686,7 +686,16 @@
       }
       if (ui.alert && ui.mode !== "off") {
         if (interaction.button(duration)) complete(); else draw(ui);
-      } else ui.press();
+      } else if (!adminPinnedByOperation) {
+        var origin = page;
+        ui.press(function() {
+          if (page !== origin) return;
+          if (page === "clock") openPage("menu");
+          else back();
+          // Navigating from a fixed display returns to automatic standby.
+          if (ui.mode === "pinned") ui.show("temporary");
+        });
+      }
     },
     swipe: function(direction, vertical) {
       if (ui.mode === "off" || ui.alert) return;

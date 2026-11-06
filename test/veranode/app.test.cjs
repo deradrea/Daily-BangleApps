@@ -203,7 +203,34 @@ test('double click pins without restarting animation and remains visible past ti
   f.clock.advance(550);f.input.btnRelease();
   assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Fisso'));
   assert.equal(f.power.length,powers);f.clock.advance(15000);assert.equal(f.power.at(-1),true);
-  f.input.btnRelease();assert.equal(f.power.at(-1),false);f.input.remove();
+  f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();
+  assert.equal(f.power.at(-1),false);f.input.remove();
+});
+
+test('side button wakes, opens Menu, goes back and leaves automatic standby armed', () => {
+  const f=fixture('still'), has=text=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===text);
+  function click(delay=701) { f.input.btnRelease(); f.clock.advance(delay); }
+  click(401);
+  assert.ok(!has('Menu'));
+  click();
+  assert.ok(has('Menu'));
+  f.input.touch(1,{x:88,y:60});
+  assert.ok(has('Raccolta')&&!has('Menu'));
+  click();
+  assert.ok(has('Menu'));
+  click();
+  assert.ok(!has('Menu'));
+  f.clock.advance(10000);
+  assert.equal(f.power.at(-1),false);
+  click(401);
+  f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();
+  f.clock.advance(701);
+  assert.ok(has('Fisso')&&!has('Menu'));
+  click();
+  assert.ok(has('Menu'));
+  f.clock.advance(10000);
+  assert.equal(f.power.at(-1),false);
+  f.input.remove();
 });
 
 test('trace follows acquisition interval, holds at completion and resets only with the next cycle', () => {
@@ -253,7 +280,7 @@ test('clock revision cancels stale click state and preserves display wake and pi
   f.state.clockRevision=3;f.update();
   f.clock.advance(600);f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();f.clock.advance(501);
   f.clock.advance(12000);assert.equal(f.power.at(-1),true);
-  f.input.btnRelease();f.clock.advance(501);assert.equal(f.power.at(-1),false);
+  f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();assert.equal(f.power.at(-1),false);
   f.input.remove();
 });
 
