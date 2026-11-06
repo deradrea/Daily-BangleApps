@@ -24,6 +24,7 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  const parent=JSON.parse(parentRaw),file=(name,b)=>({name,size:b.length,sha256:sha(b),base64:b.toString('base64')});
  const pairs=[['vz.provider.js','provider.js'],['vz.integrity.js','integrity.js'],['vz.platform.js','platform.js'],['vz.recovery.js','recovery.js'],['vz.app.js','app.js'],['vz.display.js','display.js'],['0vz.boot.js','guard.js']];
  const bootstrap=pairs.map(([name,n])=>{const b=committed('initialization/zero/'+n);acorn.parse(b.toString(),{ecmaVersion:2015});if(/Number\s*\.\s*(?:isInteger|isFinite|isSafeInteger)\s*\(/.test(b.toString()))throw Error('Unsupported firmware number helper');return file(name,b);});
+ if(bootstrap.find(f=>f.name==='vz.recovery.js').size>1024)throw Error('Recovery boot entry exceeds the single-write RAM limit');
  const dedicated=options.targetProfile==='veranode-only';
  if(options.targetProfile!==undefined&&!dedicated)throw Error('Unsupported target profile');
  let releaseConfig,target=structuredClone(parent.target.files);

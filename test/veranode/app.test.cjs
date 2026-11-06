@@ -257,6 +257,28 @@ test('clock revision cancels stale click state and preserves display wake and pi
   f.input.remove();
 });
 
+test('menu drag is consumed once and footer arrows work without a swipe',()=>{
+  const f=fixture(), frame=()=>f.graphics.commands.filter(c=>c.type==='text').map(c=>c.args[0]);
+  const has=s=>frame().includes(s);
+  f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
+  f.input.drag({x:87,y:118,b:1});
+  f.input.drag({x:90,y:88,b:1});
+  f.input.swipe(0,-1); // firmware may report this before release
+  f.input.touch(1,{x:90,y:63,type:0});
+  f.input.drag({x:90,y:88,b:0});
+  f.input.swipe(0,-1); // or immediately after release
+  assert.ok(has('Memoria')&&has('Bluetooth'));assert.ok(!has('Sistema'));
+  f.clock.advance(200);f.input.touch(1,{x:135,y:161,type:0});
+  assert.ok(has('Sistema'));
+  f.clock.advance(160);f.input.touch(1,{x:45,y:161,type:0});
+  assert.ok(has('Memoria')&&!has('Sistema'));
+  f.input.drag({x:48,y:110,b:1});f.input.drag({x:90,y:88,b:1});
+  f.input.drag({x:90,y:88,b:0});
+  assert.ok(has('Memoria')&&!has('Sistema'));
+  f.clock.advance(200);f.input.touch(1,{x:160,y:60,type:0});
+  assert.ok(has('Da trasferire'));
+  f.input.remove();
+});
 test('scrolling menu keeps large labels and memory counts distinct',()=>{
   const f=fixture(),has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
   f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
@@ -429,7 +451,8 @@ test('Nielsen: large scrolling destinations have gaps and predictable back',()=>
     }
     if(i>=2){f.input.swipe(0,-1);f.input.swipe(0,-1);}
     assert.ok(!f.graphics.commands.some(c=>c.type==='text'&&/^[12] \/ 2$/.test(c.args[0])));
-    assert.equal(f.graphics.commands.filter(c=>c.type==='drawRect'&&c.args[2]-c.args[0]===160&&c.args[3]-c.args[1]===50).length,2);
+    assert.equal(f.graphics.commands.filter(c=>c.type==='drawPoly'&&
+      c.args[0][0]===8&&c.args[0][2]===168&&[86,143].includes(c.args[0][1])).length,2);
     f.clock.advance(301);f.input.touch(1,{x:88,y:60+(i%2)*58});
     assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===destinations[i]));
     f.clock.advance(301);f.input.touch(1,{x:20,y:16});

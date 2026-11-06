@@ -72,7 +72,7 @@
     // Only deliberate interaction renews standby: sensor/status redraws do not.
     if (ui.mode === "temporary" && !ui.alert) ui.show("temporary");
   }
-  function setPage(next) { page = next; if (next === "effects") candidate = styles.indexOf(style); previousPulse = undefined; startAnimation(ui.mode !== "off"); draw(ui); }
+  function setPage(next) { menuPointer=undefined; page = next; if (next === "effects") candidate = styles.indexOf(style); previousPulse = undefined; startAnimation(ui.mode !== "off"); draw(ui); }
   function openPage(next) { history.push(page); setPage(next); }
   function back() {
     if(page==="admin" && node.administration) {
@@ -94,6 +94,16 @@
     g.setColor(tint).drawPoly([8,31,168,31]);
   }
   // Icon geometry is shared by rendering and hit targets: no hidden tap zones.
+  var menuPointer, menuMovedAt = -Infinity;
+  var menuRows = [[35,86],[92,143]];
+  function listPage() { return page === "menu" || page === "settings"; }
+  function scrollList(delta) {
+    var system = page === "settings", index = system ? systemIndex : menuIndex;
+    var next = Math.max(0, Math.min((system ? systemItems : menuItems).length-2,index+delta));
+    if(next===index)return;
+    if(system)systemIndex=next;else menuIndex=next;
+    draw(ui);
+  }
   var menuItems = [
     {label:"Raccolta", page:"collection", icon:"collect", color:"#00ff00", x:8, y:36},
     {label:"Memoria", page:"memory", icon:"memory", color:"#ffff00", x:92, y:36},
@@ -134,28 +144,19 @@
     pageHeader(settings ? "Sistema" : "Menu");
     var battery=E.getBattery();
     text(typeof battery === "number" ? Math.round(battery)+"%" : "--%",169,12,10,colors.text,1);
-    if (!settings) {
-      for(var i=0;i<2;i++) {
-        var item=menuItems[menuIndex+i],top=35+i*58;
-        g.setColor(item.color).drawRect(8,top,168,top+50);
-        icon(item.icon,28,top+25,item.color);
-        var size=22;g.setFont("Vector",size);
-        while(size>18 && g.stringWidth(item.label)>110){size--;g.setFont("Vector",size);}
-        text(item.label,52,top+(50-size)/2,size,colors.text,-1);
-      }
-      // A vertical scroll indicator replaces page numbers and paging buttons.
-      g.setColor(colors.text).drawPoly([173,35,173,143]);
-      g.fillRect(172,35+menuIndex*27,174,89+menuIndex*27);
-      if(menuIndex<menuItems.length-2)g.drawPoly([79,153,88,161,97,153]);
-      return;
+    var items=settings?systemItems:menuItems, index=settings?systemIndex:menuIndex;
+    for(var i=0;i<menuRows.length;i++){
+      var item=items[index+i], bounds=menuRows[i], center=(bounds[0]+bounds[1])/2;
+      icon(item.icon,26,center,item.color);
+      var size=22;g.setFont("Vector",size);
+      while(size>17 && g.stringWidth(item.label)>105){size--;g.setFont("Vector",size);}
+      text(item.label,49,center-size/2,size,colors.text,-1);
+      g.setColor(colors.text).drawPoly([157,center-5,162,center,157,center+5]);
+      g.setColor(colors.accent).drawPoly([8,bounds[1],168,bounds[1]]);
     }
-    for (var j=0;j<2;j++) {
-      var entry=systemItems[systemIndex+j], row=35+j*58;
-      icon(entry.icon,28,row+25,entry.color);
-      text(entry.label,52,row+15,18,colors.text,-1);
-      g.setColor(entry.color).drawPoly([8,row+50,168,row+50]);
-    }
-    if(systemIndex<systemItems.length-2)g.setColor(colors.accent).drawPoly([79,153,88,161,97,153]);
+    g.setColor(colors.accent);
+    if(index>0)g.drawPoly([34,165,44,155,54,165]);
+    if(index<items.length-2)g.drawPoly([122,155,132,165,142,155]);
   }
   var systemItems=[
     {label:"Effetti",page:"effects",icon:"effects",color:colors.heart},
@@ -213,12 +214,12 @@
   }
   function statusPage(w) {
     pageHeader("Configurazione");
-    icon("profile",24,51,colors.success);
-    text(state.policy ? "Vera" : "Da configurare", 102, 39, 18, colors.text, 0);
-    text(state.policyStale ? "Raccolta continua" : state.policy ? "Revisione " + state.policy.revision : "Da Vera App", w / 2, 67, 18, colors.text, 0);
+    var policyColor=state.policy && !state.policyStale?colors.success:colors.warning;
+    icon("profile",24,51,policyColor);
+    text(state.policyStale ? "Scaduta" : state.policy ? "Applicata" : "Da applicare", 103, 41, 19, policyColor, 0);
     var rules = state.policy && Array.isArray(state.policy.rules) ? state.policy.rules.length : null;
-    text(rules === null ? "Regole: --" : rules + " regole", w / 2, 91, 18, colors.text, 0);
-    text(state.policyStale ? "Da aggiornare" : state.policy ? "Presente" : "Da configurare", w / 2, 115, 16, state.policyStale ? colors.warning : colors.text, 0);
+    text(state.policy && !state.policyStale ? "Revisione " + state.policy.revision : "La raccolta continua", w / 2, 74, 17, colors.text, 0);
+    text(state.policy && !state.policyStale ? rules ? rules + " regole avvisi" : "Senza regole avvisi" : "Verifica da Vera App", w / 2, 104, 16, colors.text, 0);
     button(8, 134, 168, 174, "Indietro", 18);
   }
   function timePage(w) {
@@ -297,7 +298,7 @@
     icon("battery",26,59,charging ? colors.success : colors.accent);
     text(typeof percent==="number" && isFinite(percent) ? Math.round(Math.max(0,Math.min(100,percent)))+"%" : "--%",104,41,34,colors.text,0);
     text(charging ? "In ricarica" : "Non in carica",w/2,85,21,charging ? colors.success : colors.text,0);
-    text("Luce al 100%",w/2,118,17,colors.text,0);
+    text("Luce al "+displaySettings.read().brightnessPercent+"%",w/2,118,17,colors.text,0);
     text("solo a display acceso",w/2,143,14,colors.accent,0);
   }
   function softwarePage(w) {
@@ -308,8 +309,7 @@
     var version=typeof state.v==="string" && state.v.length<=20 && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(state.v) ? state.v : null;
     text(version ? "Versione "+version : "Versione: vedi app",w/2,106,16,colors.text,0);
     var revision=typeof installedInfo.revision==="string" && /^veranode-[a-z0-9.-]+$/.test(installedInfo.revision) ? installedInfo.revision : null;
-    text(revision ? "Build "+revision.slice(-8) : "Catalogo e aggiornamenti",w/2,134,13,colors.accent,0);
-    text("in Gestione su Vera App",w/2,154,13,colors.text,0);
+    text(revision ? "Build "+revision.slice(-8) : "Dettagli in Vera App",w/2,134,13,colors.accent,0);
   }
   function adminPage(w) {
     var stats=sampleStats();
@@ -691,20 +691,42 @@
     swipe: function(direction, vertical) {
       if (ui.mode === "off" || ui.alert) return;
       renewIdle();
-      if (page === "settings" && vertical) {systemIndex=Math.max(0,Math.min(systemItems.length-2,systemIndex+(vertical<0?1:-1)));draw(ui);return;}
-      if (page === "menu" && vertical) {menuIndex=Math.max(0,Math.min(menuItems.length-2,menuIndex+(vertical<0?1:-1)));draw(ui);return;}
+      if (listPage()) {
+        // The firmware can report a swipe before or after drag release.
+        if(vertical && !menuPointer && Date.now()-menuMovedAt>=180)scrollList(vertical<0?1:-1);
+        return;
+      }
       if (page === "effects" && direction) { candidate = (candidate + (direction < 0 ? 1 : styles.length - 1)) % styles.length; draw(ui); return; }
       if (vertical === -1 && page === "clock") openPage("effects");
       else if (vertical === 1 && page === "clock") openPage("menu");
       else if (vertical === 1 || direction === 1) back();
       else if (direction === -1 && page === "clock") openPage("bluetooth");
     },
+    drag: function(point) {
+      if (!listPage() || ui.mode==="off" || ui.alert) {menuPointer=undefined;return;}
+      if(point.b){
+        if(!menuPointer || menuPointer.page!==page){
+          menuPointer={page:page,x:point.x,y:point.y,dx:0,dy:0,moved:false};renewIdle();
+        }else{
+          menuPointer.dx=point.x-menuPointer.x;
+          menuPointer.dy=point.y-menuPointer.y;
+          if(Math.abs(menuPointer.dx)>=10 || Math.abs(menuPointer.dy)>=10)menuPointer.moved=true;
+        }
+        return;
+      }
+      var pointer=menuPointer;menuPointer=undefined;
+      if(!pointer || pointer.page!==page || !pointer.moved)return;
+      menuMovedAt=Date.now();renewIdle();
+      if(Math.abs(pointer.dy)>=18 && Math.abs(pointer.dy)>Math.abs(pointer.dx)*1.2)
+        scrollList(pointer.dy<0?1:-1);
+    },
     touch: function(_, point) {
       if (ui.mode === "off" || !point) return;
       if (!ui.alert) {
         renewIdle();
         var now = Date.now();
-        if (now - lastTap < 300) return;
+        if (listPage() && (point.type>0 || (menuPointer && menuPointer.moved) || now-menuMovedAt<180)) return;
+        if (now - lastTap < (listPage()?140:300)) return;
         lastTap = now;
         if (page !== "clock" && inside(point, 0, 0, 44, 32)) { back(); return; }
         if (page === "consent-ended" && inside(point, 8, 143, 168, 174)) {
@@ -714,14 +736,13 @@
         if (page === "clock" && inside(point,44,30,132,119)) { openPage("effects"); return; }
         if (page === "clock" && inside(point,40,121,155,141)) { openPage("collection"); return; }
         if (page === "clock" && inside(point, 0, 0, 58, 28)) { openPage("menu"); return; }
-        if (page === "menu") {
-          for(var m=0;m<2;m++)if(inside(point,8,35+m*58,168,85+m*58)){openPage(menuItems[menuIndex+m].page);return;}
-          return;
-        }
-        if (page === "settings") {
-          for(var i=0;i<2;i++) if(inside(point,8,35+i*58,168,85+i*58)) {
-            openPage(systemItems[systemIndex+i].page);return;
+        if (listPage()) {
+          var items=page==="settings"?systemItems:menuItems, index=page==="settings"?systemIndex:menuIndex;
+          for(var i=0;i<menuRows.length;i++)if(inside(point,4,menuRows[i][0],171,menuRows[i][1])){
+            openPage(items[index+i].page);return;
           }
+          if(inside(point,8,148,80,175))scrollList(-1);
+          else if(inside(point,96,148,168,175))scrollList(1);
           return;
         }
         if (page === "ble-confirm") {
