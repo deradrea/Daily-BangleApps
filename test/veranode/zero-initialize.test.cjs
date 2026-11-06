@@ -81,6 +81,26 @@ test('the real maintenance entry executes recovery before the first removal with
  f.p.step();assert.equal(f.p.status().removed,1);
 });
 
+test('a failed recovery entry can be retried without starting another wipe',()=>{
+ const f=fixture('vera',payload,'app-confirmed');f.prepare();f.p.beginWipe(target.fingerprint);
+ f.context.global.load=name=>vm.runInContext(f.files.get(name),f.context);
+ while(f.p.status().phase==='quarantining')f.p.step();
+ const before=f.p.status().checkpointDigest;
+ f.context.NRF.setServices=()=>{throw Error('UART unavailable');};
+ assert.throws(()=>f.timers.shift()(),/UART unavailable/);
+ assert.equal(f.env.isolated(),false);
+ assert.throws(()=>f.p.step(),/Recovery non isolata/);
+ assert.equal(f.p.status().removed,0);
+ f.context.NRF.setServices=()=>{};
+ f.p.recover(binding);
+ f.p.recover(binding);
+ assert.equal(f.timers.length,1);
+ f.timers.shift()();
+ assert.equal(f.env.isolated(),true);
+ assert.equal(f.p.status().checkpointDigest,before);
+ f.p.step();assert.equal(f.p.status().removed,1);
+});
+
 test('zero initialization works from factory, existing Vera, partial legacy and unknown boot without eraseAll',()=>{
  for(const mode of ['factory','vera','partial']){const f=fixture(mode),result=f.finish();assert.equal(result.phase,'complete');assert.equal(result.installed,22);assert.equal(result.wipeConsumed,true);assert.equal(f.sf.size,0);assert.equal(f.files.has('veranode.policy.json'),false);assert.equal(f.files.has('foreign.app.js'),false);assert.equal(f.files.get('setting.json'),payload['setting.json']);
   for(const [n,b]of Object.entries(payload))assert.equal(f.files.get(n),b,n);

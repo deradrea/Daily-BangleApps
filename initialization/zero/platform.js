@@ -1,6 +1,6 @@
 /* Trusted zero adapter. Never reads old samples, never calls eraseAll. */
 exports.create=function(){
-  var s=require('Storage'),c=require('crypto'),t=require('vz.target.js'),sequence=0;
+  var s=require('Storage'),c=require('crypto'),t=require('vz.target.js'),sequence=0,recoveryPending=false;
   var raw=global.VeraZeroRawRead||global.VeraInitializeRead||global.VeraMaintenanceStorageRead||s.read.bind(s);
   var bootEntries=['.varimg','.bootcde','.bootrst','.boot3','.boot2','.boot1','.bootPowerOn','.boot0'];
   var cleanupBootEntries=['.bootPowerOn','.boot1','.boot2','.boot3','.bootrst'];
@@ -34,7 +34,17 @@ exports.create=function(){
     // Load the isolation barrier itself. Loading only the UI relies on the
     // firmware's boot-entry path and can leave a responsive but non-isolated
     // installer, which correctly refuses to remove any old content.
-    enter:function(){setTimeout(function(){global.load('vz.recovery.js');},200);},removeBoot:function(n){if(!cleanupBootEntries.includes(n))throw Error('Avvio non previsto');if(raw(n)!==undefined)s.erase(n);if(raw(n)!==undefined)throw Error('Avvio temporaneo non rimosso');},
+    enter:function(binding){
+      if(recoveryPending||global.VeraZeroRecovery)return;
+      recoveryPending=true;
+      setTimeout(function(){
+        recoveryPending=false;
+        var st=load();
+        if(st&&st.phase==='wiping'&&st.wipeConsumed&&canonical(st.binding)===canonical(binding)){
+          global.load('vz.recovery.js');
+        }
+      },200);
+    },removeBoot:function(n){if(!cleanupBootEntries.includes(n))throw Error('Avvio non previsto');if(raw(n)!==undefined)s.erase(n);if(raw(n)!==undefined)throw Error('Avvio temporaneo non rimosso');},
     invalidateBoot:function(){delete global.VeraZeroBootGeneration;delete global.VeraZeroBootExecutionId;},bootReceipt:function(){return {generation:global.VeraZeroBootGeneration,executionId:global.VeraZeroBootExecutionId};},
     setClock:function(ms){setTime(ms/1000);return Math.round(getTime()*1000);},clockUtcMs:function(){return Math.round(getTime()*1000);},consentChanged:function(on){if(global.VeraZeroDisplay)global.VeraZeroDisplay.setConsent(on);},
     settings:function(){try{return JSON.parse(raw('setting.json'));}catch(err){return {};}},health:function(){var n=global.VeraNode;if(!n||!n.health)return null;var h=n.health();h.sampleCount=n.samples?Math.max(0,n.samples.next-1):0;return h;},progress:progress,

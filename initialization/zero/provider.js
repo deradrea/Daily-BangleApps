@@ -45,7 +45,12 @@ exports.create=function(e){
     state={protocol:1,binding:binding,targetFingerprint:e.target.fingerprint,phase:'prepared',staged:[],wipeConsumed:false,removed:0,wipeTotal:0,installed:0,bootCommitted:false,armed:0,activation:0,pending:null};
     e.replace(state,previousCheckpointDigest);e.invalidateBoot();loadError=null;upload=undefined;stagedVerified=false;paint();return status();
   }
-  function recover(binding){bound();if(!same(binding,state.binding))fail('Ripresa di un altra esecuzione');consent=false;e.consentChanged(false);upload=state.upload?{index:state.upload.index,next:state.upload.next}:undefined;stagedVerified=false;paint();return status();}
+  function recover(binding){
+    bound();if(!same(binding,state.binding))fail('Ripresa di un altra esecuzione');
+    consent=false;e.consentChanged(false);upload=state.upload?{index:state.upload.index,next:state.upload.next}:undefined;stagedVerified=false;
+    if(state.phase==='wiping'&&state.wipeConsumed&&!e.isolated())e.enter(state.binding);
+    paint();return status();
+  }
   function stagingProgress(index){
     bound();if(!['prepared','staging'].includes(state.phase)||state.wipeConsumed)fail('Ripresa caricamento non prevista');
     var f=file(index),verified=state.staged.includes(index)&&matches(stageName(index),f),b=e.read(stageName(index)),offset=verified?f.size:state.upload&&state.upload.index===index?state.upload.next:0;
@@ -81,7 +86,7 @@ exports.create=function(e){
     physical();if(!state.wipeConsumed)fail('Formattazione non autorizzata');staged();
     if(state.phase==='quarantining'){
       if(state.armed<e.bootEntries.length){var entry=e.bootEntries[state.armed];state.pending={kind:'boot',name:entry};save();e.arm(entry);state.armed++;state.pending=null;save();paint();return status();}
-      state.wipeTotal=e.countRemovable();state.phase='wiping';save();paint();e.enter();return status();
+      state.wipeTotal=e.countRemovable();state.phase='wiping';save();paint();e.enter(state.binding);return status();
     }
     if(!e.isolated())fail('Recovery non isolata');
     if(state.phase==='wiping'){
