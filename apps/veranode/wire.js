@@ -117,7 +117,7 @@ exports.create = function(env) {
           sampleAck: node.samples.checkpoint.ack, sampleDiscardedThrough: node.samples.checkpoint.discardedThrough || 0,
           sampleAdministrativePending: !!node.samples.eraseLock, eventEpoch: node.events.checkpoint.epoch,
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
-          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
+          live: state.running && state.collectionEnabled !== false, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
         if (node.timeHistory) {
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
@@ -128,7 +128,11 @@ exports.create = function(env) {
         if (node.timeHistory) snapshot.buffers.clock = node.timeHistory.stats();
         snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, integrity: "fnv1a32"};
         snapshot.recordIntervalMs = state.recordIntervalMs;
-        snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true;
+        snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true || state.collectionEnabled === false;
+        snapshot.capabilities.collectionControl = typeof node.setCollection === "function";
+        if (snapshot.capabilities.collectionControl) snapshot.collectionEnabled = state.collectionEnabled;
+        snapshot.capabilities.collectionModes = typeof node.setCollectionMode === "function";
+        if (snapshot.capabilities.collectionModes) snapshot.collectionMode = state.collectionMode;
         snapshot.preparationPaused = state.maintenancePaused === true;
         snapshot.storageError = state.storageError;
         if (node.health) snapshot.acquisitionHealth = node.health();
@@ -143,6 +147,13 @@ exports.create = function(env) {
           catch (_) { snapshot.hardwareError = true; }
         }
         answer(req.id, snapshot);
+      } else if (req.op === "collection_set") {
+        if (typeof node.setCollection !== "function") throw new Error("Controllo raccolta non disponibile");
+        if (req.mode !== undefined) {
+          if (req.enabled !== undefined || typeof node.setCollectionMode !== "function")
+            throw new Error("Modalita raccolta non disponibile");
+          answer(req.id, {collectionMode: node.setCollectionMode(req.mode), collectionEnabled: state.collectionEnabled});
+        } else answer(req.id, {collectionEnabled: node.setCollection(req.enabled)});
       } else if (req.op === "settings_get" || req.op === "settings_set") {
         if(!node.displaySettings)throw new Error("Preferenze display non disponibili");
         answer(req.id,req.op==="settings_get"?node.displaySettings.read():node.displaySettings.set(req));

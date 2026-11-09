@@ -193,7 +193,7 @@ Journal.prototype.ack = function(epoch, sequence) {
   }
   var storage = this.storage, self = this;
   this.segments = this.segments.filter(function(segment) {
-    if (segment.sealed && segment.last > 0 && segment.last <= sequence) {
+    if (segment.last > 0 && segment.last <= sequence) {
       if (self.reader && self.reader.segment === segment) self.reader = null;
       // StorageFile.erase, not Storage.erase: Espruino stores file chunks separately.
       storage.open(segment.name, "r").erase();

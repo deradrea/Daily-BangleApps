@@ -44,6 +44,34 @@ test('authorized configuration readback identifies the installed context without
  f.server.dispose();f.node.dispose();
 });
 
+test('collection changes require owner consent and leave the archive intact', () => {
+  const f = setup(), data = policy();
+  f.node.start();
+  f.command({id:'blocked', op:'collection_set', enabled:false});
+  assert.equal(f.responses()[0].ok,false);
+  f.command({id:'owner',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});
+  f.server.decide(true);f.responses();
+  const before = f.node.samples.next;
+  f.command({id:'off',op:'collection_set',enabled:false});
+  assert.equal(f.responses()[0].result.collectionEnabled,false);
+  f.command({id:'status',op:'status'});
+  const status = f.responses()[0].result;
+  assert.equal(status.capabilities.collectionControl,true);
+  assert.equal(status.collectionEnabled,false);
+  assert.equal(status.live,false);
+  assert.equal(f.node.samples.next,before);
+  f.command({id:'invalid-mode',op:'collection_set',mode:'auto'});
+  assert.equal(f.responses()[0].ok,false);
+  f.command({id:'app-mode',op:'collection_set',mode:'app'});
+  assert.equal(f.responses()[0].result.collectionMode,'app');
+  f.command({id:'mode-status',op:'status'});
+  const appStatus=f.responses()[0].result;
+  assert.equal(appStatus.capabilities.collectionModes,true);
+  assert.equal(appStatus.collectionMode,'app');
+  assert.equal(appStatus.collectionEnabled,true);
+  f.server.dispose();f.node.dispose();
+});
+
 test('a visible unanswered consent expires at 60 seconds and a late Yes cannot authorize', () => {
   const f=setup(), data=policy();
   f.command({id:'timed-auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});

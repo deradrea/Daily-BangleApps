@@ -324,8 +324,11 @@ test('append capacity accounts for partial acknowledgements, sealed segments and
  const before=[...storage.files.entries()];
  assert.deepEqual(journal.stats(),{capacity:8,stored:3,pending:3,available:5,full:false});
  assert.deepEqual([...storage.files.entries()],before);
+ journal.ack(journal.checkpoint.epoch,2);
+ assert.deepEqual(journal.stats(),{capacity:8,stored:3,pending:1,available:5,full:false});
+ assert.deepEqual(journal.readBatch(0,4).map(row=>row.seq),[3]);
  journal.ack(journal.checkpoint.epoch,3);
- assert.deepEqual(journal.stats(),{capacity:8,stored:3,pending:0,available:5,full:false});
+ assert.deepEqual(journal.stats(),{capacity:8,stored:0,pending:0,available:8,full:false});
  journal.append('sample',4,{});journal.ack(journal.checkpoint.epoch,4);
  assert.deepEqual(journal.stats(),{capacity:8,stored:0,pending:0,available:8,full:false});
  const reboot=new core.Journal(storage,'s',{maxSegments:2,segmentRecords:4});

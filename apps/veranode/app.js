@@ -171,23 +171,37 @@
     if (node.samples && node.samples.stats) return node.samples.stats();
     return {pending: node.samples ? node.samples.pending() : "--", stored: "--", capacity: "--", available: "--"};
   }
+  var collectionError = false;
   function collectionPage(w) {
     var linked = !!NRF.getSecurityStatus().connected, stats = sampleStats();
     pageHeader("Raccolta");
     var paused = !!state.maintenancePaused, blocked = state.paused || stats.full || !!state.storageError;
-    var title = paused ? "In pausa" : !state.running ? "Ferma" : blocked ? "Da verificare" : "Attiva";
-    icon("collect",27,49,paused || !state.running || blocked ? colors.warning : colors.success);
-    text(title,106,36,21,paused || !state.running || blocked ? colors.warning : colors.success,0,112);
+    var off = state.collectionEnabled === false;
+    var appMode = state.collectionMode === "app";
+    var title = off ? "Disattivata" : paused ? "In pausa" : !state.running ? "Ferma" : blocked ? "Da verificare" : appMode ? "App" : "Attiva";
+    var statusColor = off || paused || !state.running || blocked ? colors.warning : colors.success;
+    icon("collect",27,49,statusColor);
+    text(title,106,36,21,statusColor,0,112);
     text(linked ? "BLE collegato" : "Offline",w/2,64,21,linked ? colors.accent : colors.text,0);
-    text(paused ? "Pausa di test" : linked ? "Invio: vedi app" : "Senza telefono",w/2,91,18,colors.text,0);
     var elapsed=typeof state.lastRecordAt === "number" ? Date.now()-state.lastRecordAt : -1;
     var recent=elapsed >= 0 && elapsed <= Math.max(90000,state.recordIntervalMs*2);
     var last=recent ? new Date(state.lastRecordAt) : null;
-    text(state.storageError ? "Verifica memoria" : paused ? "Dati conservati" : recent ?
-      "Ultimo: "+("0"+last.getHours()).slice(-2)+":"+("0"+last.getMinutes()).slice(-2) : "Dato non recente",w/2,114,17,
-      state.storageError || (!paused && !recent) ? colors.warning : colors.text,0);
-    button(8,137,168,174,state.storageError || stats.full ? "Verifica memoria" : "Memoria: "+stats.pending,18);
+    text(collectionError ? "Riprova" : state.storageError ? "Verifica memoria" : paused || off ? "Dati conservati" : appMode ? "Archivio di riserva" : recent ?
+      "Ultimo: "+("0"+last.getHours()).slice(-2)+":"+("0"+last.getMinutes()).slice(-2) : "Dato non recente",w/2,88,16,
+      collectionError || state.storageError || (!paused && !off && !recent) ? colors.warning : colors.text,0);
+    if (node.setCollectionMode) button(8,105,168,136,"Modalità raccolta",17);
+    else if (node.setCollection) button(8,105,168,136,off ? "Attiva Raccolta" : "Disattiva Raccolta",17);
+    button(8,141,168,174,state.storageError || stats.full ? "Verifica memoria" : "Memoria: "+stats.pending,18);
     // Recent sample age is available in the memory view; no new polling timer.
+  }
+  var collectionModes = ["active", "off", "app"];
+  function collectionModePage() {
+    pageHeader("Modalità raccolta");
+    ["Attiva", "Disattiva", "App"].forEach(function(label, i) {
+      var top = 37 + i * 43;
+      button(8,top,168,top+36,
+        label + (state.collectionMode === collectionModes[i] ? "  •" : ""),20);
+    });
   }
   function memoryPage(w) {
     var stats = sampleStats();
@@ -491,6 +505,7 @@
     if (page === "menu" && !screen.alert) { menuPage(false); return; }
     if (page === "settings" && !screen.alert) { menuPage(true); return; }
     if (page === "collection" && !screen.alert) { collectionPage(w); return; }
+    if (page === "collection-mode" && !screen.alert) { collectionModePage(); return; }
     if (page === "memory" && !screen.alert) { memoryPage(w); return; }
     if (page === "status" && !screen.alert) { statusPage(w); return; }
     if (page === "effects" && !screen.alert) { effectsPage(w); return; }
@@ -760,7 +775,24 @@
           return;
         }
         if (page === "collection") {
-          if (inside(point, 8, 134, 168, 174)) openPage("memory");
+          if (inside(point, 8, 141, 168, 174)) openPage("memory");
+          else if (node.setCollectionMode && inside(point, 8, 105, 168, 136)) openPage("collection-mode");
+          else if (node.setCollection && inside(point, 8, 105, 168, 136)) {
+            try { node.setCollection(state.collectionEnabled === false); collectionError = false; }
+            catch (_) { collectionError = true; }
+            draw(ui);
+          }
+          return;
+        }
+        if (page === "collection-mode") {
+          for (var modeIndex=0;modeIndex<collectionModes.length;modeIndex++) {
+            var modeTop=37+modeIndex*43;
+            if (!inside(point,8,modeTop,168,modeTop+36)) continue;
+            try { node.setCollectionMode(collectionModes[modeIndex]); collectionError=false; }
+            catch (_) { collectionError=true; }
+            back();
+            return;
+          }
           return;
         }
         if (page === "memory") {

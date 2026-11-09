@@ -323,11 +323,31 @@ test('collection distinguishes BLE presence from delivery and flags blocked or s
   const f=fixture(), has=text=>f.graphics.commands.some(c=>c.type==='text'&&String(c.args[0])===text);
   f.state.lastRecordAt=f.clock.now()-12000;
   f.input.btnRelease();f.clock.advance(401);f.input.touch(1,{x:88,y:155});
-  assert.ok(has('BLE collegato'));assert.ok(has('Invio: vedi app'));
+  assert.ok(has('BLE collegato'));assert.ok(has('Attiva'));
   f.security.connected=false;f.update();f.clock.advance(2000);assert.ok(has('Offline'));
-  assert.ok(has('Senza telefono'));assert.ok(f.graphics.commands.some(c=>c.type==='text'&&/^Ultimo: [0-9][0-9]:[0-9][0-9]$/.test(c.args[0])));
+  assert.ok(f.graphics.commands.some(c=>c.type==='text'&&/^Ultimo: [0-9][0-9]:[0-9][0-9]$/.test(c.args[0])));
   f.state.paused=true;f.state.storageError='Memoria campioni piena';f.update();f.clock.advance(2000);
   assert.ok(has('Da verificare'));assert.ok(has('Verifica memoria'));assert.ok(!has('Attiva'));
+  f.input.remove();
+});
+
+test('collection menu exposes the three modes and retains access to memory', () => {
+  const f = fixture();
+  f.state.collectionMode = 'active';
+  f.node.setCollectionMode = mode => {
+    f.state.collectionMode = mode;
+    f.state.collectionEnabled = mode !== 'off';
+  };
+  f.input.btnRelease(); f.clock.advance(401);
+  f.input.touch(1, {x:88,y:155}); f.clock.advance(301);
+  f.input.touch(1, {x:88,y:120}); f.clock.advance(301);
+  const has = label => f.graphics.commands.some(c => c.type === 'text' && c.args[0] === label);
+  assert.ok(has('Attiva  •')); assert.ok(has('Disattiva')); assert.ok(has('App'));
+  f.input.touch(1, {x:88,y:140}); f.clock.advance(301);
+  assert.equal(f.state.collectionMode,'app');
+  assert.ok(has('Archivio di riserva'));
+  f.input.touch(1, {x:88,y:159});
+  assert.ok(has('Memoria'));
   f.input.remove();
 });
 

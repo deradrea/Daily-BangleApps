@@ -81,3 +81,39 @@ test('explicit preparation pause preserves journals and management listeners, th
  node.pauseRecording(false);assert.equal(node.state.maintenancePaused,false);
  assert.ok(node.samples.next>high);assert.equal(f.power.at(-1),true);node.dispose();
 });
+
+test('collection preference survives reboot and maintenance without touching pending samples', () => {
+ const f=platform(core);
+ let node=runtime.create(f.env);node.start();
+ const high=node.samples.next,epoch=node.samples.checkpoint.epoch;
+ node.setCollection(false);node.pauseRecording(true);node.pauseRecording(false);
+ f.clock.advance(90000);
+ assert.equal(node.samples.next,high);assert.equal(f.power.at(-1),false);
+ node.dispose();node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionEnabled,false);
+ assert.equal(node.samples.next,high);assert.equal(node.samples.checkpoint.epoch,epoch);
+ node.setCollection(true);
+ assert.equal(f.power.at(-1),true);assert.equal(node.samples.next,high+1);
+ node.dispose();
+});
+
+test('three collection modes preserve old preferences and the App fallback survives reconnect and reboot', () => {
+ const f=platform(core);
+ f.storage.write('veranode.collection',core.pack(false));
+ let node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionMode,'off');
+ assert.equal(node.samples.pending(),0);
+ assert.equal(node.setCollectionMode('app'),'app');
+ f.bus.emit('disconnect');f.clock.advance(30000);
+ f.bus.emit('connect');f.clock.advance(30000);
+ assert.equal(node.samples.pending(),3);
+ node.dispose();node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionMode,'app');
+ assert.equal(node.samples.pending(),4);
+ assert.equal(node.setCollectionMode('active'),'active');
+ assert.equal(node.samples.pending(),4);
+ node.setCollection(false);
+ assert.equal(node.state.collectionMode,'off');
+ assert.equal(node.samples.pending(),4);
+ node.dispose();
+});

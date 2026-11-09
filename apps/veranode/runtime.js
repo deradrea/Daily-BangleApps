@@ -18,8 +18,15 @@ exports.create = function(env) {
   var samples = journal("veranode.s", sampleSegments, 32, "Campioni");
   var events = journal("veranode.e", 4, 16, "Eventi");
   var timeHistory = env.timeFactory ? journal("veranode.t", 4, 16, "Orario") : null;
+  var collectionKey = "veranode.collection";
+  var storedCollection = storage.read(collectionKey);
+  var savedCollection = core.unpack(storedCollection);
+  // Earlier versions stored a boolean. Keep their choices on first boot.
+  var collectionMode = savedCollection === "app" ? "app" :
+    storedCollection === undefined || savedCollection === true || savedCollection === "active" ? "active" : "off";
   var state = {v: "0.2.0", mac: env.mac, connected: false, recordIntervalMs: intervalMs, lastRecordAt: null, nextRecordAt: null, peerName: null, values: {}, running: false,
-    policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false};
+    policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
+    collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
@@ -81,8 +88,11 @@ exports.create = function(env) {
     saveAlerts();
     changed();
   }
+  function collecting() {
+    return !disposed && state.running && state.collectionEnabled && !state.maintenancePaused;
+  }
   function notify() {
-    if (!state.connected || disposed || !state.running || state.maintenancePaused) return;
+    if (!state.connected || !collecting()) return;
     if (lastNotify > clock.now()) lastNotify = clock.now() - 1000;
     var wait = 1000 - (clock.now() - lastNotify);
     if (wait > 0) {
@@ -94,7 +104,7 @@ exports.create = function(env) {
     catch (e) { state.connected = false; }
   }
   function ingest(field, value, quality) {
-    if (disposed || !state.running || state.maintenancePaused) return;
+    if (!collecting()) return;
     observeTime();
     state.values[field] = {value: value, at: clock.now(), quality: quality};
     if (engine) engine.evaluate(state.values, clock.now());
@@ -124,7 +134,7 @@ exports.create = function(env) {
     });
   }
   function tick() {
-    if (disposed || !state.running || state.maintenancePaused) return;
+    if (!collecting()) return;
     observeTime();
     sensorHealth.tickCount++;
     state.lastRecordAt = clock.now(); state.nextRecordAt = state.lastRecordAt + intervalMs;
@@ -221,7 +231,7 @@ exports.create = function(env) {
     state.queue.shift(); saveAlerts(); changed(); return true;
   }
   function onHeart(value) {
-    if (state.running && !state.maintenancePaused) sensorHealth.heartEvents++;
+    if (collecting()) sensorHealth.heartEvents++;
     if (value && typeof value.confidence === "number" && value.confidence >= 50 &&
         typeof value.bpm === "number" && isFinite(value.bpm) && value.bpm > 0 && value.bpm <= 65535) ingest("battito", value.bpm, value.confidence);
   }
@@ -241,11 +251,11 @@ exports.create = function(env) {
     try {
       env.on("HRM", onHeart); env.on("connect", connected); env.on("disconnect", disconnected);
       state.connected = env.connected();
-      if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
-      sensorHealth.hrmRequested = true;
+      if (state.collectionEnabled && env.hrm(true) === false) throw new Error("Sensore battito non avviato");
+      sensorHealth.hrmRequested = state.collectionEnabled;
       state.running = true;
-      timer = clock.setInterval(tick, intervalMs);
-      tick(); changed();
+      if (state.collectionEnabled) scheduleCollection();
+      changed();
       if (env.progress) env.progress("Pronto", 1, 1);
     } catch (e) {
       state.running = false; sensorHealth.hrmRequested = false;
@@ -262,11 +272,61 @@ exports.create = function(env) {
   function health() {
     return {schemaVersion: 1, running: state.running, scheduled: timer !== undefined,
       hrmRequested: sensorHealth.hrmRequested, maintenancePaused: state.maintenancePaused === true,
-      recordingBlocked: state.paused === true || state.maintenancePaused === true,
+      recordingBlocked: state.paused === true || !collecting(),
       tickCount: sensorHealth.tickCount, heartEvents: sensorHealth.heartEvents,
       temperatureReads: sensorHealth.temperatureReads, temperatureFailures: sensorHealth.temperatureFailures,
       lastRecordAt: state.lastRecordAt, nextRecordAt: state.nextRecordAt,
       startError: sensorHealth.startError};
+  }
+
+  function scheduleCollection() {
+    if (timer === undefined) timer = clock.setInterval(tick, intervalMs);
+    tick();
+  }
+
+  function quietSensors() {
+    if (timer !== undefined) clock.clearInterval(timer);
+    timer = undefined;
+    state.nextRecordAt = null;
+    pressureGeneration++; pendingPressure = false;
+    if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
+    pressureTimer = undefined;
+    if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
+    notifyTimer = undefined;
+    sensorHealth.hrmRequested = false;
+    env.hrm(false);
+  }
+
+  function setCollectionMode(mode) {
+    if (disposed || !["active", "off", "app"].includes(mode)) throw new Error("Modalita raccolta non valida");
+    if (state.collectionMode === mode) return mode;
+    var enabled = mode !== "off", wasEnabled = state.collectionEnabled;
+    var resume = enabled && !wasEnabled && state.running && !state.maintenancePaused;
+    if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+    var value = core.pack(mode === "app" ? mode : enabled);
+    try {
+      storage.write(collectionKey, value);
+      if (storage.read(collectionKey) !== value) throw new Error("Preferenza raccolta non confermata");
+    } catch (e) {
+      if (resume) env.hrm(false);
+      throw e;
+    }
+    state.collectionMode = mode; state.collectionEnabled = enabled;
+    if (!enabled) {
+      state.values = {};
+      quietSensors();
+    } else if (resume) {
+      sensorHealth.hrmRequested = true;
+      scheduleCollection();
+    }
+    changed();
+    return mode;
+  }
+
+  function setCollection(enabled) {
+    if (typeof enabled !== "boolean") throw new Error("Comando raccolta non valido");
+    setCollectionMode(enabled ? "active" : "off");
+    return enabled;
   }
 
   // Explicit preparation hold: drain the archive before a fresh offline trial.
@@ -277,19 +337,14 @@ exports.create = function(env) {
     if ((state.maintenancePaused === true) === next) return;
     if (next) {
       state.maintenancePaused = true;
-      pressureGeneration++; pendingPressure = false;
-      if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
-      pressureTimer = undefined;
-      if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
-      notifyTimer = undefined;
-      sensorHealth.hrmRequested = false;
-      env.hrm(false);
+      quietSensors();
     } else {
       // A failed resume must remain visibly paused, with no false running proof.
-      if (state.running && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
-      sensorHealth.hrmRequested = state.running;
+      var resume = state.running && state.collectionEnabled;
+      if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+      sensorHealth.hrmRequested = resume;
       state.maintenancePaused = false;
-      if (state.running) tick();
+      if (resume) scheduleCollection();
     }
     changed();
   }
@@ -302,7 +357,7 @@ exports.create = function(env) {
     env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
     env.hrm(false); listeners = [];
   }
-  return {state: state, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, installPolicy: installPolicy, respond: respond,
+  return {state: state, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, setCollection: setCollection, setCollectionMode: setCollectionMode, installPolicy: installPolicy, respond: respond,
     administration: env.administration || null,
     displaySettings: new core.DisplayPreferences(storage),
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,
