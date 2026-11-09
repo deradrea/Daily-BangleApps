@@ -58,6 +58,24 @@ test('touch outside the action cannot acknowledge; correct target is durable res
 });
 module.exports = {fixture};
 
+test('a deletion offer opens its watch screen and waits for a deliberate touch', () => {
+  const f=fixture();
+  let confirmations=0;
+  f.node.administration={
+    status: () => ({executionEnabled:true,phase:'confirmation',total:2,removed:0}),
+    confirm: () => confirmations++
+  };
+  f.update();
+  assert.equal(f.power.at(-1),true);
+  assert.ok(f.graphics.commands.some(c=>c.type==='text' && c.args[0]==='Verifica e cancella'));
+  assert.equal(confirmations,0);
+  f.input.touch(1,{x:85,y:152});
+  assert.equal(confirmations,0);
+  f.clock.advance(401);
+  f.input.touch(1,{x:85,y:152});
+  assert.equal(confirmations,1);
+});
+
 test('management consent preempts but never acknowledges a queued sensor alert', () => {
   const f=fixture(), decisions=[];
   f.state.queue.push({id:'retained',metric:'battito',value:110,severity:'warning'});
@@ -562,9 +580,8 @@ test('administrative erase view includes pending records but cannot destroy data
 test('watch erase confirmation is a dedicated physical target and cannot repeat while running',()=>{
  const f=fixture();let phase='confirmation',confirms=0;
  f.node.administration={status:()=>({executionEnabled:true,phase,total:128,removed:0}),
-   confirm:()=>{confirms++;phase='running';},cancel:()=>true};
- f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);f.input.touch(1,{x:88,y:118});
- f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+   confirm:()=>{confirms++;phase='running';f.update();},cancel:()=>true};
+ f.update();
  const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
  assert.ok(has('Verifica e cancella'));assert.ok(has('Anche non trasferiti'));
  f.clock.advance(301);f.input.touch(1,{x:40,y:55});assert.equal(confirms,0);
@@ -575,8 +592,7 @@ test('cooperative verification has visible percentage, stays awake and can be ca
  const f=fixture();let phase='confirmation',confirms=0,cancels=0;
  f.node.administration={status:()=>({executionEnabled:true,phase,total:128,removed:0,verificationPercent:42,pending:false}),
   confirm:()=>{confirms++;phase='verifying';f.update();},cancel:()=>{cancels++;phase='idle';f.update();return true;}};
- f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);f.input.touch(1,{x:88,y:118});
- f.clock.advance(301);f.input.touch(1,{x:88,y:156});f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+ f.update();f.clock.advance(401);f.input.touch(1,{x:88,y:156});
  f.clock.advance(15000);f.update();f.clock.advance(2100);
  const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
  assert.ok(has('Verifica firma'));assert.ok(has('42%'));assert.ok(has('Annulla verifica'));assert.equal(f.power.at(-1),true);

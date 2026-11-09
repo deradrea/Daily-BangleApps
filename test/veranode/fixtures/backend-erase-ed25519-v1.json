@@ -1,0 +1,36 @@
+{
+  "schema": "vera-bangle-erase-test-vector/1",
+  "testOnly": true,
+  "publicKey": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "body": {
+    "v": 1,
+    "issuer": "https://vera.example.test",
+    "keyId": "vera-erase-test-1",
+    "operationId": "22222222-2222-4222-8222-222222222222",
+    "mac": "AA:BB:CC:DD:EE:01",
+    "userUuid": "11111111-1111-4111-8111-111111111111",
+    "companyId": 2,
+    "assignmentId": 3,
+    "scope": "https://vera.example.test.11111111-1111-4111-8111-111111111111.2",
+    "epoch": "test-epoch",
+    "high": 10,
+    "stored": 2,
+    "pending": 1,
+    "planHash": "b18334553f2a0d2e3819ec6bca64cce6e7f53170497eaea97a31f91f8ac4818a",
+    "nonce": "1111111111111111111111111111111111111111111111111111111111111111",
+    "counter": 1,
+    "issuedAt": 1893456000000,
+    "expiresAt": 1893456060000,
+    "clockRevision": 1
+  },
+  "signature": "95ca101880e95dc613ea6c28c5763bcb06fe49675b30de1f522fb7f17743c1f783bfdee59a004c466d49e06aec633308221cf63c708531d7127f20b99f743304",
+  "segment_plan": [
+    {
+      "name": "veranode.s0",
+      "count": 2,
+      "last": 10,
+      "hash": "92c49ee8bff78ddab20940c21a332015300e64221c0c717b5448adb7b465ad67"
+    }
+  ],
+  "canonical": "[\"vera-bangle-erase/1\",\"Ed25519\",\"erase_samples\",1,\"https://vera.example.test\",\"vera-erase-test-1\",\"22222222-2222-4222-8222-222222222222\",\"AA:BB:CC:DD:EE:01\",\"11111111-1111-4111-8111-111111111111\",2,3,\"https://vera.example.test.11111111-1111-4111-8111-111111111111.2\",\"test-epoch\",10,2,1,\"b18334553f2a0d2e3819ec6bca64cce6e7f53170497eaea97a31f91f8ac4818a\",\"1111111111111111111111111111111111111111111111111111111111111111\",1,1893456000000,1893456060000,1]"
+}

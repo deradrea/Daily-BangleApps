@@ -77,7 +77,7 @@
   function back() {
     if(page==="admin" && node.administration) {
       var admin=node.administration.status();
-      if(admin.phase==="verifying" && !admin.pending)node.administration.cancel();
+      if((admin.phase==="confirmation" || admin.phase==="verifying") && !admin.pending)node.administration.cancel();
     }
     if (page === "consent-ended") consentEnded = false; setPage(history.pop() || "clock");
   }
@@ -615,6 +615,7 @@
     startAnimation(ui.mode !== "off"); cues.start(alert.presentation);
   }
   function complete() { cues.stop(); ui.closeAlert(); interaction = null; startAnimation(ui.mode !== "off"); update(); }
+  var eraseConfirmReadyAt = 0, eraseConfirmationShown = false;
   function update() {
     if (disposed) return;
     startAnimation(ui.mode !== "off");
@@ -634,6 +635,15 @@
           vibration: false, dismiss: "either", repeats: 1, pulseMs: 150}}); return;
     }
     if (state.queue.length && !ui.alert) { present(state.queue[0]); return; }
+    var admin=node.administration && node.administration.status();
+    var awaitingErase = admin && admin.executionEnabled && admin.phase==="confirmation";
+    if (!awaitingErase) eraseConfirmationShown = false;
+    if (!ui.alert && awaitingErase && !eraseConfirmationShown) {
+      eraseConfirmationShown = true;
+      eraseConfirmReadyAt = Date.now() + 400;
+      if (page!=="admin") openPage("admin");
+      if (ui.mode!=="pinned") { adminPinnedByOperation=true; ui.show("pinned"); }
+    }
     if (ui.mode !== "off" && !redrawTimer) redrawTimer = setTimeout(function() { redrawTimer = undefined; draw(ui); }, 2000);
   }
   var unsubscribeDisplay=displaySettings.onChange(function(value){
@@ -650,7 +660,7 @@
   var adminPinnedByOperation=false;
   var unsubscribe = node.onChange(function() {
     var admin=node.administration && node.administration.status();
-    var adminActive=page==="admin" && admin && (admin.phase==="verifying" || admin.phase==="running");
+    var adminActive=page==="admin" && admin && (admin.phase==="confirmation" || admin.phase==="verifying" || admin.phase==="running");
     if(adminActive && !ui.alert && ui.mode==="temporary"){adminPinnedByOperation=true;ui.show("pinned");}
     else if(adminPinnedByOperation && !adminActive){adminPinnedByOperation=false;if(!ui.alert && ui.mode==="pinned")ui.show("temporary");}
     if (observedClockRevision !== state.clockRevision) {
@@ -826,7 +836,9 @@
         } else if(page === "admin") {
           var admin=node.administration && node.administration.status();
           if(admin && admin.executionEnabled && inside(point,8,137,168,174)) {
-            if(admin.phase === "confirmation")node.administration.confirm();
+            if(admin.phase === "confirmation"){
+              if (eraseConfirmationShown && Date.now()>=eraseConfirmReadyAt) node.administration.confirm();
+            }
             else if(admin.phase === "interrupted" && admin.pending)node.administration.resume();
             else if(admin.phase!=="running"){node.administration.cancel();back();}
             draw(ui);
