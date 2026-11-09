@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "repository": "Daily_BangleApps",
+  "directory": "apps/veranode",
+  "version": "0.2.0",
+  "builderSha256": "3f67bdd628c7a18d2df80885f26e13d3190746b906d5bb627ed158c8fb202a8b",
+  "licenseSha256": "399bfa37df3a20274cea111ac879622770d5ed8f60164d61d989e029bcbec53f",
+  "files": {
+    "metadata.json": "15fd5994e07e66fa8aebda9598f4d185e15cefb367df1f97014f2b6459c53edb",
+    "clock.js": "b8be77127634441cd809f1ceb406f7a7cf8501afce883e52507607030abad722",
+    "app.js": "12616fa4c08c614037f0d025ae9d8c48a1ce4d71a4c1bafee6e3204152c48ebb",
+    "boot.js": "8f945c6ea938590900d4edc36a9c40a62d9fd3e027dd0a78d6ec87b4642f6859",
+    "core.js": "22847877a5d8c7ae844aeb093aa65ca95524dd9dc20a1592382fc2136cdd0d41",
+    "runtime.js": "24bc43959b8d154adb17ddb22eb5a8d55ffb800d6711606ee042b96e9e77e7c5",
+    "wire.js": "7b25b9cf9cdb9ee2d3ddd2347bc9302b0619811812b500a8014b3e61600c8e93",
+    "app-icon.js": "0712f95671131209669f4257916b131d918b3083c4d1053dbe9107f3daaec959"
+  }
+}
