@@ -22,8 +22,8 @@ exports.create = function(env) {
   var storedCollection = storage.read(collectionKey);
   var savedCollection = core.unpack(storedCollection);
   // Earlier versions stored a boolean. Keep their choices on first boot.
-  var collectionMode = savedCollection === "app" ? "app" :
-    storedCollection === undefined || savedCollection === true || savedCollection === "active" ? "active" : "off";
+  var collectionMode = storedCollection === undefined || savedCollection === "app" ? "app" :
+    savedCollection === true || savedCollection === "active" ? "active" : "off";
   var state = {v: "0.2.0", mac: env.mac, connected: false, recordIntervalMs: intervalMs, lastRecordAt: null, nextRecordAt: null, peerName: null, values: {}, running: false,
     policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
     collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};

@@ -117,3 +117,15 @@ test('three collection modes preserve old preferences and the App fallback survi
  assert.equal(node.samples.pending(),4);
  node.dispose();
 });
+
+test('an unconfigured watch defaults to App while a saved legacy active choice stays active', () => {
+ const f=platform(core);
+ let node=runtime.create(f.env);
+ assert.equal(node.state.collectionMode,'app');
+ assert.equal(node.state.collectionEnabled,true);
+ node.dispose();
+ f.storage.write('veranode.collection',core.pack(true));
+ node=runtime.create(f.env);
+ assert.equal(node.state.collectionMode,'active');
+ node.dispose();
+});

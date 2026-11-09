@@ -8,11 +8,16 @@ function uuid(s) {
   if(typeof s!=="string" || s.length!==36 || !/^[0-9a-f-]+$/.test(s))return false;
   var p=s.split("-");return p.length===5 && p[0].length===8 && p[1].length===4 && p[2].length===4 && p[3].length===4 && p[4].length===12;
 }
+function mac(s) {
+  if(typeof s!=="string" || s.length!==17)return false;
+  var pairs=s.split(":");
+  return pairs.length===6 && pairs.every(function(pair){return pair.length===2 && /^[0-9A-F]+$/.test(pair);});
+}
 function canonical(body) {
   if(!body || Object.keys(body).length!==fields.length || fields.some(function(k){return !Object.prototype.hasOwnProperty.call(body,k);}) ||
     body.v!==1 || typeof body.issuer!=="string" || body.issuer.length>120 || !/^https:\/\/[a-z0-9.:-]+$/i.test(body.issuer) ||
     !token(body.keyId,32) || !uuid(body.operationId) || !uuid(body.userUuid) ||
-    typeof body.mac!=="string" || body.mac.length!==17 || !/^([0-9A-F][0-9A-F]:)+[0-9A-F][0-9A-F]$/.test(body.mac) ||
+    !mac(body.mac) ||
     typeof body.scope!=="string" || body.scope.length<1 || body.scope.length>120 || /[^\x20-\x7e]/.test(body.scope) ||
     !token(body.epoch,64) || !hex(body.planHash,32) || !hex(body.nonce,32) ||
     !integer(body.companyId,2147483647) || body.companyId<1 || !integer(body.assignmentId,2147483647) || body.assignmentId<1 ||
@@ -29,16 +34,20 @@ function bytes(raw) {
   return out;
 }
 function ascii(raw) { var out=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out; }
-function verifier(nacl) {
+function parts(message,signature,publicKey) {
   // Reject non-canonical S as well as malformed signatures. Replay protection
   // uses the signed operation/counter, never the signature representation.
   var order=bytes("edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010");
-  return function(message, signature, publicKey) {
-    if(!hex(signature,64) || !hex(publicKey,32))return false;
+    if(typeof message!=="string" || message.length>4096 || /[^\x20-\x7e]/.test(message) || !hex(signature,64) || !hex(publicKey,32))return null;
     var sig=bytes(signature),less=false;
-    for(var i=31;i>=0;i--) { if(sig[32+i]<order[i]){less=true;break;}if(sig[32+i]>order[i])return false; }
-    if(!less)return false;
-    try { return nacl.sign.detached.verify(ascii(message),sig,bytes(publicKey))===true; }
+    for(var i=31;i>=0;i--) { if(sig[32+i]<order[i]){less=true;break;}if(sig[32+i]>order[i])return null; }
+    if(!less)return null;
+    return {message:ascii(message),signature:sig,publicKey:bytes(publicKey)};
+}
+function verifier(nacl) {
+  return function(message,signature,publicKey) {
+    var input=parts(message,signature,publicKey);if(!input)return false;
+    try { return nacl.sign.detached.verify(input.message,input.signature,input.publicKey)===true; }
     catch(e) { return false; }
   };
 }
@@ -46,3 +55,4 @@ exports.canonical=canonical;
 exports.verifier=verifier;
 exports.fields=fields;
 exports.hex=hex;
+exports.parts=parts;

@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "date": "2026-10-28",
+  "passed": true,
+  "hardware": false,
+  "interpreter": "2v29",
+  "board": "EMSCRIPTEN2",
+  "sourceSha256": "a70c0f6f31f7043ac52c72337bce3f5aab68535a0c917240066d942e36ddbc7d",
+  "sourceBytes": 19557,
+  "canonicalMatchesPHP": true,
+  "perVerificationBudgetMs": 60000,
+  "results": [
+    {
+      "valid": true,
+      "steps": 764,
+      "elapsedHostMs": 22220,
+      "maxStepMs": 172.9998588562,
+      "minFree": 9694
+    },
+    {
+      "valid": true,
+      "steps": 764,
+      "elapsedHostMs": 21410,
+      "maxStepMs": 183.00008773803,
+      "minFree": 9628
+    },
+    {
+      "valid": false,
+      "steps": 764,
+      "elapsedHostMs": 22955,
+      "maxStepMs": 207.99994468688,
+      "minFree": 9628
+    }
+  ],
+  "scope": "isolated interpreter, not physical device latency, battery or full runtime memory"
+}
