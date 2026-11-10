@@ -1,6 +1,6 @@
 /* Bangle.js2 platform adapter. Display absence and BLE disconnect never stop acquisition. */
-exports.create = function(env) {
-  var core = env.core, storage = env.storage, clock = env.clock;
+function openArchives(env, deferRecovery) {
+  var core = env.core, storage = env.storage;
   var config = storage.readJSON("veranode.config.json", true) || {};
   var intervalMs = typeof config.recordMs === "number" && isFinite(config.recordMs) ?
     Math.max(10000, Math.min(45000, config.recordMs)) : 30000;
@@ -12,12 +12,22 @@ exports.create = function(env) {
   var files = storage.list(undefined, {sf: true});
   function journal(prefix, segments, records, label) {
     return new core.Journal(storage, prefix, {maxSegments: segments, segmentRecords: records,
-      segmentHash: env.segmentHash, files: files,
+      segmentHash: env.segmentHash, files: files, deferRecovery: deferRecovery,
       progress: function(done, total) { if (env.progress) env.progress(label, done, total); }});
   }
   var samples = journal("veranode.s", sampleSegments, 32, "Campioni");
   var events = journal("veranode.e", 4, 16, "Eventi");
   var timeHistory = env.timeFactory ? journal("veranode.t", 4, 16, "Orario") : null;
+  return {intervalMs: intervalMs, samples: samples, events: events, timeHistory: timeHistory};
+}
+exports.openArchives = openArchives;
+exports.create = function(env, archives) {
+  var core = env.core, storage = env.storage, clock = env.clock;
+  archives = archives || openArchives(env, false);
+  var intervalMs = archives.intervalMs, samples = archives.samples,
+    events = archives.events, timeHistory = archives.timeHistory;
+  if (samples.recover || events.recover || (timeHistory && timeHistory.recover))
+    throw new Error("Verifica archivio in corso");
   var collectionKey = "veranode.collection";
   var storedCollection = storage.read(collectionKey);
   var savedCollection = core.unpack(storedCollection);

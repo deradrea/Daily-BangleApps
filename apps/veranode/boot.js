@@ -1,7 +1,7 @@
 /* global bleServices, bleServiceOptions */
 (function() {
-  if (global.VeraNode) return;
-  var started = Date.now(), lastPaint = 0, previousPhase, previousStep = -1;
+  if (global.VeraNode || (global.VeraBoot && global.VeraBoot.resume)) return;
+  var started = Date.now(), lastPaint = 0, clockShown = false;
   var startup = global.VeraBoot = {phase: "Sistema", done: 0, total: 0, elapsedMs: 0};
   function progress(phase, done, total) {
     // Display feedback is optional: it must never prevent data acquisition.
@@ -11,36 +11,23 @@
   function paint(phase, done, total) {
     startup.elapsedMs = Date.now() - started;
     startup.phase = phase; startup.done = done; startup.total = total;
-    // Draw only when work advances, never invent a percentage or keep a timer
-    // alive after startup. Avoid repainting each segment on the flash fast path.
-    var step = total > 0 ? Math.floor(done * 24 / total) : 0;
-    if (typeof g === "undefined" || (phase === previousPhase && done !== total &&
-      step === previousStep && Date.now() - lastPaint < 1500)) return;
-    previousPhase = phase; previousStep = step;
+    if (typeof g === "undefined") return;
+    var failed = phase === "Errore avvio";
+    if (clockShown && !failed && phase !== "Pronto" && Date.now() - lastPaint < 250) return;
     Bangle.setLCDPower(true); Bangle.setLCDBrightness(1); Bangle.setBacklight(true);
-    var w = g.getWidth(), x = w / 2, y = 112, failed = phase === "Errore avvio";
-    g.reset().setBgColor("#000000").clear().setColor("#00ffff").setFont("Vector", 28).setFontAlign(0, -1);
-    g.drawString("VERA", x, 14).setColor("#ffffff").setFont("Vector", 16);
-    g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Avvio in corso", x, 51);
-    g.setColor("#0000ff").fillCircle(x, y, 39).setColor("#000000").fillCircle(x, y, 34);
-    if (total > 0 && done > 0) {
-      // Outer + inner arcs stay below the hardware limit of 64 vertices.
-      var points = [], i, angle, steps = Math.max(1, Math.ceil(done * 24 / total));
-      for (i = 0; i <= steps; i++) {
-        angle = -Math.PI / 2 + Math.PI * 2 * done / total * i / steps;
-        points.push(x + Math.cos(angle) * 39, y + Math.sin(angle) * 39);
-      }
-      for (i = steps; i >= 0; i--) {
-        angle = -Math.PI / 2 + Math.PI * 2 * done / total * i / steps;
-        points.push(x + Math.cos(angle) * 34, y + Math.sin(angle) * 34);
-      }
-      g.setColor(failed ? "#ff0000" : phase === "Pronto" ? "#00ff00" : "#00ffff").fillPoly(points);
-    }
-    g.setColor("#ffffff").setFont("Vector", 16).drawString(failed ? "Errore" : total > 1 ? done + " / " + total : "...", x, 99);
-    g.setFont("Vector", 11).drawString(total > 1 ? "blocchi" : phase === "Pronto" ? "Pronto" : "Attendi", x, 122);
-    g.setFont("Vector", 10).drawString(Math.floor(startup.elapsedMs / 1000) + " s", x, 142);
-    g.setFont("Vector", 14).drawString(failed ? startup.failurePhase || "Sistema" : phase, x, 158);
+    var x = g.getWidth() / 2, now = new Date();
+    var hh = ("0" + now.getHours()).slice(-2), mm = ("0" + now.getMinutes()).slice(-2);
+    g.reset().setBgColor("#000000").clear().setColor("#00ffff").setFont("Vector", 23).setFontAlign(0, -1);
+    g.drawString("VERA", x, 18).setColor("#ffffff").setFont("Vector", 43);
+    g.drawString(hh + ":" + mm, x, 54).setFont("Vector", 15);
+    g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Verifica archivio", x, 118);
+    if (total > 0 && phase !== "Pronto")
+      g.setFont("Vector", 12).drawString(phase + " " + done + "/" + total, x, 141);
     if (g.flip) g.flip();
+    if (!clockShown && !failed) {
+      startup.firstClockMs = Date.now() - started;
+      clockShown = true;
+    }
     lastPaint = Date.now();
   }
   progress("Sistema", 0, 0);
@@ -69,7 +56,7 @@
     Object.keys(services).forEach(function(service) { bleServices[service] = services[service]; });
     bleServiceOptions.uart = true;
   } else NRF.setServices(services, {uart: true});
-  global.VeraNode = require("veranode.runtime.js").create({
+  var runtime = require("veranode.runtime.js"), env = {
     progress: progress,
     core: core, storage: storage, mac: NRF.getAddress().split(" ")[0].toUpperCase(),
     timeFactory: require("veranode.clock.js").create,
@@ -96,34 +83,73 @@
       });
       if (Object.keys(changes).length) NRF.updateServices(changes);
     }
-  });
-  server = wire.create({chunkSize: function() { return txBytes; }, node: global.VeraNode, mac: global.VeraNode.state.mac,
-    describe: function() {
-      return {board: process.env.BOARD, firmware: process.env.VERSION,
-        batteryPercent: E.getBattery(), charging: Bangle.isCharging(),
-        storageFreeBytes: storage.getFree()};
-    },
-    clock: {setTimeout: setTimeout, clearTimeout: clearTimeout},
-    encrypted: function() { return !!NRF.getSecurityStatus().encrypted; },
-    consent: function(value) { global.VeraNode.state.consent = value; global.VeraNode.changed(); },
-    send: function(text) {
-      var response = {}; response[wire.service] = {}; response[wire.service][wire.response] = {value: text, notify: true};
-      NRF.updateServices(response);
-    }});
-  // MTU changes are available on the installed Espruino 2v29. Keep the
-  // default 20-byte payload for older centrals and each new connection.
-  NRF.on("mtu", function(mtu) {
-    if (typeof mtu === "number" && isFinite(mtu) && mtu >= 23)
-      txBytes = Math.max(20, Math.min(180, Math.floor(mtu) - 3));
-  });
-  NRF.on("disconnect", function() { txBytes = 20; server.reset(); });
-  // The system bootloader applies bleServices after all *.boot.js files.
-  global.VeraNode.state.bleEnabled = (storage.readJSON("veranode.ble.json", 1) || {}).enabled !== false;
-  setTimeout(function() {
+  };
+  function ready(archives) {
+    global.VeraNode = runtime.create(env, archives);
+    server = wire.create({chunkSize: function() { return txBytes; }, node: global.VeraNode, mac: global.VeraNode.state.mac,
+      describe: function() {
+        return {board: process.env.BOARD, firmware: process.env.VERSION,
+          batteryPercent: E.getBattery(), charging: Bangle.isCharging(),
+          storageFreeBytes: storage.getFree()};
+      },
+      clock: {setTimeout: setTimeout, clearTimeout: clearTimeout},
+      encrypted: function() { return !!NRF.getSecurityStatus().encrypted; },
+      consent: function(value) { global.VeraNode.state.consent = value; global.VeraNode.changed(); },
+      send: function(text) {
+        var response = {}; response[wire.service] = {}; response[wire.service][wire.response] = {value: text, notify: true};
+        NRF.updateServices(response);
+      }});
+    // MTU changes are available on the installed Espruino 2v29. Keep the
+    // default 20-byte payload for older centrals and each new connection.
+    NRF.on("mtu", function(mtu) {
+      if (typeof mtu === "number" && isFinite(mtu) && mtu >= 23)
+        txBytes = Math.max(20, Math.min(180, Math.floor(mtu) - 3));
+    });
+    NRF.on("disconnect", function() { txBytes = 20; server.reset(); });
+    // The system bootloader applies bleServices after all *.boot.js files.
+    global.VeraNode.state.bleEnabled = (storage.readJSON("veranode.ble.json", 1) || {}).enabled !== false;
+    global.VeraNode.start();
+    startup.collectionReadyMs = Date.now() - started;
+    if (!global.VeraNode.state.bleEnabled) NRF.sleep();
+  }
+  var archives, journals, index = 0, timer;
+  function schedule(delay) {
+    if (timer !== undefined) {
+      try { clearTimeout(timer); } catch (_) { /* The system may have removed it. */ }
+    }
+    timer = setTimeout(recover, delay);
+  }
+  function recover() {
+    timer = undefined;
     try {
-      global.VeraNode.start();
-      if (!global.VeraNode.state.bleEnabled) NRF.sleep();
-    } catch (e) { startup.failed = true; startup.failurePhase = startup.phase; startup.error = String(e).slice(0, 120); progress("Errore avvio", 0, 0); throw e; }
-  }, 0);
-  } catch (e) { startup.failed = true; startup.failurePhase = startup.phase; startup.error = String(e).slice(0, 120); progress("Errore avvio", 0, 0); throw e; }
+      if (!archives) {
+        archives = runtime.openArchives(env, true);
+        journals = [archives.samples, archives.events, archives.timeHistory];
+      }
+      while (index < journals.length) {
+        var journal = journals[index];
+        if (journal && !journal.recover(32)) { schedule(1); return; }
+        index++;
+      }
+      delete startup.resume;
+      ready(archives);
+      archives = journals = undefined;
+    } catch (e) { fail(e); return; }
+    var onReady = startup.onReady;
+    delete startup.onReady;
+    if (onReady) {
+      try { onReady(); } catch (_) { startup.displayError = true; }
+    }
+  }
+  // The clock loader may clear timers while opening the foreground app.
+  startup.resume = function() { schedule(0); };
+  startup.resume();
+  } catch (e) { fail(e); throw e; }
+  function fail(e) {
+    delete startup.resume;
+    delete startup.onReady;
+    startup.failed = true; startup.failurePhase = startup.phase;
+    startup.error = String(e).slice(0, 120);
+    progress("Errore avvio", 0, 0);
+  }
 })();

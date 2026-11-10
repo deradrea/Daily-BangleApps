@@ -78,36 +78,56 @@ function Journal(storage, prefix, options) {
   for (var slot = 0; slot < this.maxSegments; slot++) {
     if (present[slot]) existing.push(slot);
   }
+  var file, segment;
   function progress() { if (options.progress) options.progress(recovered, existing.length); }
-  progress();
-  for (var entry = 0; entry < existing.length; entry++) {
-    var i = existing[entry];
-    var name = prefix + i;
-    var cached = unpack(storage.read(name + "idx")), fingerprint;
-    if (this.segmentHash && cached && cached.epoch === this.checkpoint.epoch &&
-      cached.count === this.segmentRecords && finite(cached.last) && cached.last >= cached.count) {
-      try { fingerprint = this.segmentHash(name); } catch (e) { fingerprint = null; }
-      if (fingerprint && fingerprint.hash === cached.hash && fingerprint.bytes === cached.bytes) {
-        this.segments.push({name: name, count: cached.count, last: cached.last, sealed: true});
-        this.next = Math.max(this.next, cached.last + 1);
-        recovered++; progress();
+  function finishSegment() {
+    self.segments.push(segment);
+    segment = file = undefined;
+    recovered++;
+    progress();
+  }
+  // A cached segment or a line consumes one unit. Keep the reader position
+  // between turns, including when a damaged segment contains excess records.
+  this.recover = function(budget) {
+    if (!recovered && !file) progress();
+    while (recovered < existing.length && budget > 0) {
+      if (!file) {
+        var name = prefix + existing[recovered];
+        var cached = unpack(storage.read(name + "idx")), fingerprint = null;
+        if (self.segmentHash && cached && cached.epoch === self.checkpoint.epoch &&
+          cached.count === self.segmentRecords && finite(cached.last) && cached.last >= cached.count) {
+          try { fingerprint = self.segmentHash(name); } catch (e) { fingerprint = null; }
+        }
+        if (fingerprint && fingerprint.hash === cached.hash && fingerprint.bytes === cached.bytes) {
+          segment = {name: name, count: cached.count, last: cached.last, sealed: true};
+          self.next = Math.max(self.next, cached.last + 1);
+          finishSegment();
+          budget--;
+          continue;
+        }
+        file = storage.open(name, "r");
+        segment = {name: name, count: 0, last: 0, sealed: false};
+      }
+      var line = file.readLine();
+      budget--;
+      if (line === undefined) {
+        if (segment.count >= self.segmentRecords) segment.sealed = true;
+        self.cacheSegment(segment);
+        finishSegment();
         continue;
       }
-    }
-    var file = storage.open(name, "r"), line, segment = {name: name, count: 0, last: 0, sealed: false};
-    while ((line = file.readLine()) !== undefined) {
       var row = unpack(line);
       if (!row || !finite(row.seq) || row.seq < 1) { segment.sealed = true; continue; }
       segment.count++;
       segment.last = Math.max(segment.last, row.seq);
-      this.next = Math.max(this.next, row.seq + 1);
+      self.next = Math.max(self.next, row.seq + 1);
     }
-    if (segment.count >= this.segmentRecords) segment.sealed = true;
-    this.segments.push(segment);
-    this.cacheSegment(segment);
-    recovered++; progress();
-  }
-  this.segments.sort(function(x, y) { return x.last - y.last; });
+    if (recovered !== existing.length) return false;
+    self.segments.sort(function(x, y) { return x.last - y.last; });
+    delete self.recover;
+    return true;
+  };
+  if (!options.deferRecovery) this.recover(Infinity);
 }
 Journal.prototype.cacheSegment = function(segment) {
   if (!this.segmentHash || segment.count !== this.segmentRecords) return;

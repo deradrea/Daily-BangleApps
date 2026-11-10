@@ -11,7 +11,7 @@ test('system boot keeps Vera GATT services and starts sensors only after service
   const context = {global: {}, bleServices: {'abcd': {}}, bleServiceOptions: {uart: false},
     g: graphics,
     require: name => { if (name === 'Storage') return f.storage;
-      assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Avvio in corso'));
+      assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Verifica archivio'));
       return name === 'veranode.core.js' ? core : name === 'veranode.clock.js' ? require('../../apps/veranode/clock.js') : name === 'veranode.wire.js' ? require('../../apps/veranode/wire.js') : runtime; },
     Date, setTimeout: f.clock.setTimeout, clearTimeout: f.clock.clearTimeout,
     setInterval: f.clock.setInterval, clearInterval: f.clock.clearInterval,
@@ -47,7 +47,7 @@ test('startup shows a failure state instead of an indefinite loading message',()
 
 test('a graphics failure cannot prevent acquisition startup',()=>{
  const f=platform(core),graphics=new(require('./graphics.cjs').Graphics)();
- graphics.fillCircle=()=>{throw Error('Display unavailable');};
+ graphics.drawString=()=>{throw Error('Display unavailable');};
  const context={global:{},Date,g:graphics,bleServices:{},bleServiceOptions:{},
   setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout,
   setInterval:f.clock.setInterval,clearInterval:f.clock.clearInterval,

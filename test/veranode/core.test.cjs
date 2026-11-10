@@ -362,3 +362,30 @@ test('duplicate custody ACK avoids flash writes and retries pruning after interr
  const reboot=new core.Journal(store,'s',{maxSegments:2,segmentRecords:1});
  assert.equal(reboot.append('sample',30,{}).seq,3);
 });
+
+
+test('deferred recovery bounds reads and preserves pending sample bytes and sequence', () => {
+  const f = platform(core);
+  const prior = new core.Journal(f.storage, 'veranode.s');
+  for (let index = 0; index < 70; index++) prior.append('sample', index, {value:72});
+  prior.ack(prior.checkpoint.epoch, 10);
+  const saved = [...f.storage.files];
+  const open = f.storage.open.bind(f.storage);
+  let reads = 0;
+  f.storage.open = (name, mode) => {
+    const file = open(name, mode), read = file.readLine;
+    file.readLine = () => { reads++; return read(); };
+    return file;
+  };
+  const archives = runtime.openArchives(f.env, true);
+  assert.equal(reads, 0);
+  assert.throws(() => runtime.create(f.env, archives), /Verifica archivio/);
+  assert.equal(archives.samples.recover(32), false);
+  assert.equal(reads, 32);
+  while (!archives.samples.recover(32)) {}
+  assert.ok(archives.events.recover(32));
+  const node = runtime.create(f.env, archives);
+  assert.equal(node.samples.next, 71);
+  assert.equal(node.samples.pending(), 60);
+  assert.deepEqual([...f.storage.files], saved);
+});

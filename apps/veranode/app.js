@@ -1,4 +1,10 @@
-(function() {
+(function openVeraFace() {
+  var startup = global.VeraBoot;
+  if (startup && startup.resume) {
+    startup.onReady = openVeraFace;
+    startup.resume();
+    return;
+  }
   var node = global.VeraNode;
   if (!node) { E.showMessage("Riavvia dopo\nl'installazione", "Vera Node"); return; }
   var core = require("veranode.core.js"), state = node.state;
