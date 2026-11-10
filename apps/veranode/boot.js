@@ -60,6 +60,7 @@
     progress: progress,
     core: core, storage: storage, mac: NRF.getAddress().split(" ")[0].toUpperCase(),
     timeFactory: require("veranode.clock.js").create,
+    indexHash: typeof E !== "undefined" && typeof E.CRC32 === "function" ? function(text) { return E.CRC32(text); } : undefined,
     segmentHash: function(name) {
       var raw = storage.open(name, "r").read(60000);
       if (typeof raw !== "string" || raw.length >= 60000) return null;

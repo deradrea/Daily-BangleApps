@@ -39,6 +39,8 @@ function Journal(storage, prefix, options) {
   this.segmentRecords = options.segmentRecords || 32;
   this.maxLine = options.maxLine || 1800;
   this.segmentHash = options.segmentHash;
+  this.indexHash = options.indexHash;
+  this.indexGeneration = -1;
   this.segments = [];
   // One volatile reader only: no extra flash writes or retained record batches.
   this.reader = null;
@@ -78,9 +80,15 @@ function Journal(storage, prefix, options) {
   for (var slot = 0; slot < this.maxSegments; slot++) {
     if (present[slot]) existing.push(slot);
   }
-  var file, segment;
+  // A published index is usable only for the exact custody generation and
+  // flash inventory. Otherwise recover the legacy segments and rebuild it.
+  var indexed = this.indexHash && !this.eraseLock && this.restoreIndex(present);
+  if (indexed) existing = indexed.active === null || !present[indexed.active] ? [] : [indexed.active];
+  var file, segment, refreshIndex = !indexed;
   function progress() { if (options.progress) options.progress(recovered, existing.length); }
   function finishSegment() {
+    if (segment.sealed) refreshIndex = true;
+    else segment.needsSeparator = true;
     self.segments.push(segment);
     segment = file = undefined;
     recovered++;
@@ -93,7 +101,7 @@ function Journal(storage, prefix, options) {
     while (recovered < existing.length && budget > 0) {
       if (!file) {
         var name = prefix + existing[recovered];
-        var cached = unpack(storage.read(name + "idx")), fingerprint = null;
+        var cached = !indexed && unpack(storage.read(name + "idx")), fingerprint = null;
         if (self.segmentHash && cached && cached.epoch === self.checkpoint.epoch &&
           cached.count === self.segmentRecords && finite(cached.last) && cached.last >= cached.count) {
           try { fingerprint = self.segmentHash(name); } catch (e) { fingerprint = null; }
@@ -117,18 +125,81 @@ function Journal(storage, prefix, options) {
         continue;
       }
       var row = unpack(line);
-      if (!row || !finite(row.seq) || row.seq < 1) { segment.sealed = true; continue; }
+      if (!row || !finite(row.seq) || row.seq < 1) { if (line !== "") segment.sealed = true; continue; }
       segment.count++;
       segment.last = Math.max(segment.last, row.seq);
       self.next = Math.max(self.next, row.seq + 1);
     }
     if (recovered !== existing.length) return false;
     self.segments.sort(function(x, y) { return x.last - y.last; });
+    if (refreshIndex && self.indexHash && !self.eraseLock) {
+      try { self.saveIndex(); } catch (_) { /* Existing rows remain readable. */ }
+    }
     delete self.recover;
     return true;
   };
   if (!options.deferRecovery) this.recover(Infinity);
 }
+Journal.prototype.readIndex = function(slot) {
+  try {
+    var raw = this.storage.read(this.prefix + "map" + slot);
+    if (!raw || raw.length > 18000) return;
+    var envelope = JSON.parse(raw), body = envelope[1];
+    if (typeof body !== "string" || envelope[0] !== this.indexHash(body)) return;
+    var index = JSON.parse(body);
+    if (index.v === 1 && finite(index.generation) && index.generation >= 0 &&
+        Math.floor(index.generation) === index.generation && index.generation % 2 === slot) return index;
+  } catch (_) { /* Ignore unreadable copies. */ }
+};
+Journal.prototype.restoreIndex = function(present) {
+  var a = this.readIndex(0), b = this.readIndex(1);
+  var index = a && (!b || a.generation > b.generation) ? a : b;
+  if (!index) return;
+  this.indexGeneration = index.generation;
+  if (index.epoch !== this.checkpoint.epoch || index.custody !== this.checkpoint.generation ||
+      !Array.isArray(index.sealed) || index.sealed.length > 512) return;
+  var seen = {}, segments = [], last = 0, self = this;
+  function validSlot(slot) {
+    return finite(slot) && Math.floor(slot) === slot && slot >= 0 && slot < 512;
+  }
+  for (var i = 0; i < index.sealed.length; i++) {
+    var entry = index.sealed[i];
+    if (!Array.isArray(entry) || entry.length !== 3) return;
+    var slot = entry[0], count = entry[1], high = entry[2];
+    if (!validSlot(slot) || !present[slot] || seen[slot] ||
+        !finite(count) || count < 0 || Math.floor(count) !== count ||
+        !finite(high) || Math.floor(high) !== high || high < last || high < count) return;
+    seen[slot] = true;
+    segments.push({name: this.prefix + slot, count: count, last: high, sealed: true});
+    last = high;
+  }
+  if (index.active !== null && (!validSlot(index.active) || seen[index.active])) return;
+  if (Object.keys(present).some(function(slot) { return !seen[slot] && Number(slot) !== index.active; })) return;
+  self.indexCustody = index.custody;
+  self.segments = segments;
+  self.next = Math.max(self.next, last + 1);
+  return index;
+};
+Journal.prototype.saveIndex = function(active) {
+  if (!this.indexHash || this.eraseLock) return;
+  var self = this, sealed = [], reserving = active !== undefined;
+  if (!reserving) active = null;
+  this.segments.forEach(function(segment, position) {
+    var slot = Number(segment.name.slice(self.prefix.length));
+    if (segment.sealed || reserving || position < self.segments.length - 1)
+      sealed.push([slot, segment.count, segment.last]);
+    else active = slot;
+  });
+  var generation = this.indexGeneration + 1;
+  var body = JSON.stringify({v: 1, generation: generation, epoch: this.checkpoint.epoch,
+    custody: this.checkpoint.generation, active: active, sealed: sealed});
+  var file = this.prefix + "map" + (generation % 2);
+  var bytes = JSON.stringify([this.indexHash(body), body]);
+  this.storage.write(file, bytes);
+  if (this.storage.read(file) !== bytes) throw new Error("Indice archivio non confermato");
+  this.indexGeneration = generation;
+  this.indexCustody = this.checkpoint.generation;
+};
 Journal.prototype.cacheSegment = function(segment) {
   if (!this.segmentHash || segment.count !== this.segmentRecords) return;
   try {
@@ -145,6 +216,7 @@ Journal.prototype.saveCheckpoint = function(value) {
   if (!readback || JSON.stringify(readback) !== JSON.stringify(value)) throw new Error("Checkpoint non confermato");
 };
 Journal.prototype.append = function(kind, at, payload) {
+  if (this.recover || this.writeUncertain) throw new Error("Archivio da verificare prima di scrivere");
   if(this.eraseLock && !Array.isArray(this.eraseReserved))throw new Error("Archivio in manutenzione amministrativa");
   var row = {v: 1, epoch: this.checkpoint.epoch, seq: this.next, kind: kind, at: at, data: payload};
   var encoded = pack(row);
@@ -158,17 +230,24 @@ Journal.prototype.append = function(kind, at, payload) {
     while (names.includes(this.prefix + index)) index++;
     if(index>=512)throw new Error("Archivio oltre il limite supportato");
     if(index>=this.maxSegments){this.full=true;return;}
+    // Record the open slot before its first write. An interrupted reservation
+    // can safely point to a file that has not been created yet.
+    this.saveIndex(index);
     segment = {name: this.prefix + index, count: 0, last: 0, sealed: false};
     this.segments.push(segment);
   }
   // A torn final line seals the segment on reboot, preserving prior records.
   if (this.reader && this.reader.segment === segment) this.reader = null;
-  try { this.storage.open(segment.name, "a").write(encoded + "\n"); }
-  catch (e) { segment.sealed = true; throw e; }
+  try { this.storage.open(segment.name, "a").write((segment.needsSeparator ? "\n" : "") + encoded + "\n"); }
+  catch (e) { if (this.indexHash) this.writeUncertain = true; else segment.sealed = true; throw e; }
+  segment.needsSeparator = false;
   segment.count++;
   segment.last = this.next++;
   segment.sealed = segment.count >= this.segmentRecords;
-  if (segment.sealed) this.cacheSegment(segment);
+  if (segment.sealed) {
+    this.cacheSegment(segment);
+    try { this.saveIndex(); } catch (_) { /* Previous index still treats this slot as open. */ }
+  }
   this.full = false;
   return row;
 };
@@ -191,7 +270,7 @@ Journal.prototype.readBatch = function(after, limit) {
         var row = unpack(line); // CRC remains mandatory for every returned row.
         if (row && finite(row.seq)) {
           reader.after = row.seq;
-          if (row.seq > cursor) rows.push(row);
+          if (row.seq > cursor && row.seq < self.next) rows.push(row);
         }
       }
     });
@@ -199,6 +278,7 @@ Journal.prototype.readBatch = function(after, limit) {
   return rows;
 };
 Journal.prototype.ack = function(epoch, sequence) {
+  if (this.recover || this.writeUncertain) throw new Error("Archivio da verificare prima di confermare");
   if(this.eraseLock)throw new Error("Archivio in manutenzione amministrativa");
   if (epoch !== this.checkpoint.epoch || !finite(sequence) || Math.floor(sequence) !== sequence ||
       sequence < this.checkpoint.ack || sequence >= this.next) throw new Error("ACK non valido");
@@ -211,7 +291,7 @@ Journal.prototype.ack = function(epoch, sequence) {
     this.saveCheckpoint(next);
     this.checkpoint = next;
   }
-  var storage = this.storage, self = this;
+  var storage = this.storage, self = this, beforePrune = this.segments.length;
   this.segments = this.segments.filter(function(segment) {
     if (segment.last > 0 && segment.last <= sequence) {
       if (self.reader && self.reader.segment === segment) self.reader = null;
@@ -222,6 +302,9 @@ Journal.prototype.ack = function(epoch, sequence) {
     return true;
   });
   this.full = this.segments.length >= this.maxSegments && this.segments[this.segments.length - 1].sealed;
+  if (this.indexHash && (this.indexCustody !== this.checkpoint.generation || this.segments.length !== beforePrune)) {
+    try { this.saveIndex(); } catch (_) { /* Custody already has its own durable checkpoint. */ }
+  }
 };
 Journal.prototype.pending = function() { return this.next - 1 - Math.max(this.checkpoint.ack,this.checkpoint.discardedThrough || 0); };
 // Actual append capacity includes retained partial segments and sealed tails.

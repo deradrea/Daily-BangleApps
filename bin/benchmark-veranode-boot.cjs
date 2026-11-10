@@ -12,7 +12,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const dir = process.env.VERA_ESPRUINO_EMULATOR_DIR ||
   path.join(os.tmpdir(), 'vera-espruino-2v29', manifest.commit);
 
-async function measure(files, records, cached) {
+async function measure(files, records, cached, indexed, torn) {
   let output = '', resolve;
   const ready = new Promise(done => resolve = done);
   const ctx = vm.createContext({console:{log(){},warn(){},error(){}}, require, process,
@@ -55,7 +55,8 @@ async function measure(files, records, cached) {
       const code = bytes.toString();
       assert.ok(code.includes('if (env.progress) env.progress("Pronto"'));
       bytes = Buffer.from(code.replace('if (env.progress) env.progress("Pronto"',
-        'global.testCollectionAt = Date.now(); if (env.progress) env.progress("Pronto"'));
+        'global.testCollectionAt = Date.now(); if (env.progress) env.progress("Pronto"')
+        .replace('state.paused = !row;', 'if (row && global.testFirstSampleAt === undefined) global.testFirstSampleAt = Date.now(); state.paused = !row;'));
     }
     for (let offset = 0; offset < bytes.length; offset += 384) {
       value('require("Storage").write('+JSON.stringify(file.name)+',atob('+
@@ -71,6 +72,16 @@ async function measure(files, records, cached) {
       (cached?'var raw=s.open(name,"r").read(60000);s.write(name+"idx",core.pack({epoch:"startup-fixture",count:32,last:'+((i+1)*32)+',hash:E.CRC32(raw),bytes:raw.length}));':'')+
       'return true;})()');
   }
+  if (indexed) {
+    const slot = records / 32;
+    const prepared = value('(function(){var s=require("Storage"),c=require("veranode.core.js"),j=new c.Journal(s,"veranode.s",{maxSegments:92,indexHash:function(t){return E.CRC32(t);},segmentHash:function(n){var raw=s.open(n,"r").read(60000);return {hash:E.CRC32(raw),bytes:raw.length};}});'+
+      (torn?'j.saveIndex('+slot+');s.open("veranode.s'+slot+'","a").write('+JSON.stringify('{"body":"torn')+');':'')+
+      'return j.next;})()');
+    assert.equal(prepared,records+1);
+  }
+  // The fixture creates no runtime. Drop its cached module before boot.
+  value('(function(){Modules.removeCached("veranode.core.js");return true;})()');
+  assert.equal(value('Modules.getCached().includes("veranode.core.js")'),false);
   value('(function(){var s=require("Storage");global.bleServices={};global.bleServiceOptions={};global.__FILE__="veranode.app.js";'+
     'Bangle.setHRMPower=function(on){return on;};global.testBootAt=Date.now();eval(s.read("veranode.boot.js"));eval(s.read("veranode.app.js"));return true;})()');
   ctx.jsIdle();
@@ -81,18 +92,21 @@ async function measure(files, records, cached) {
     result=value('({error:VeraBoot.error,clockMs:VeraBoot.firstClockMs,'+
       'faceMs:global.testFaceAt===undefined?null:global.testFaceAt-testBootAt,'+
       'collectionMs:global.testCollectionAt===undefined?null:global.testCollectionAt-testBootAt,'+
+      'firstSampleMs:global.testFirstSampleAt===undefined?null:global.testFirstSampleAt-testBootAt,'+
+      'storageError:global.VeraNode&&VeraNode.state.storageError,'+
       'running:!!global.VeraNode&&VeraNode.health().scheduled,'+
       'pending:global.VeraNode?VeraNode.samples.pending():null,'+
       'next:global.VeraNode?VeraNode.samples.next:null})');
-    if (result.error) throw Error(result.error);
-    if (result.faceMs!==null && result.collectionMs!==null) break;
+    if (result.error || result.storageError) throw Error(JSON.stringify(result));
+    if (result.faceMs!==null && result.collectionMs!==null && result.firstSampleMs!==null) break;
     ctx.jsIdle();
   }
   ctx.jsStopIdle();
-  assert.ok(result.running && result.faceMs!==null && result.collectionMs!==null,JSON.stringify(result));
+  assert.ok(result.running && result.faceMs!==null && result.collectionMs!==null && result.firstSampleMs!==null,JSON.stringify(result));
   // The immediate acquisition can append one record. All fixture records must remain pending.
   assert.ok(result.pending===records || result.pending===records+1,JSON.stringify(result));
   assert.equal(result.next,result.pending+1);
+  assert.equal(value('VeraNode.samples.readBatch('+records+',1)[0].seq'),records+1);
   if (result.clockMs===undefined) result.clockMs=result.faceMs;
   return result;
 }
@@ -103,9 +117,11 @@ async function main() {
   assert.equal(sha(stableBytes),'8480a61d50ed748ca18a5e35b436210fb20d9e438b579b6126d08bcd090914fc');
   const stable = JSON.parse(stableBytes).target.files;
   const beta = JSON.parse(fs.readFileSync(betaPath)).files;
-  const records = scenario==='empty' ? 0 : 2880;
-  assert.ok(['stable','beta'].includes(release) && ['empty','full','indexed'].includes(scenario));
-  const result = await measure(release==='stable'?stable:beta,records,scenario==='indexed');
+  const indexed = scenario.startsWith('persistent'), torn = scenario.endsWith('-torn');
+  const records = scenario==='empty' || scenario.includes('-empty') ? 0 : 2880;
+  assert.ok(['stable','beta'].includes(release) && (['empty','full','indexed'].includes(scenario) ||
+    (release==='beta' && /^persistent-(empty|full)(-torn)?$/.test(scenario))));
+  const result = await measure(release==='stable'?stable:beta,records,scenario==='indexed'||indexed,indexed,torn);
   console.log(JSON.stringify({release,scenario,records,interpreter:'2v29',hardware:false,...result}));
 }
 main().then(()=>process.exit(0),error=>{console.error(error);process.exit(1);});

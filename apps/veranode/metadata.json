@@ -46,6 +46,9 @@
   ],
   "data": [
     {
+      "wildcard": "veranode.smap?"
+    },
+    {
       "name": "veranode.time.json"
     },
     {

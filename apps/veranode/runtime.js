@@ -12,7 +12,8 @@ function openArchives(env, deferRecovery) {
   var files = storage.list(undefined, {sf: true});
   function journal(prefix, segments, records, label) {
     return new core.Journal(storage, prefix, {maxSegments: segments, segmentRecords: records,
-      segmentHash: env.segmentHash, files: files, deferRecovery: deferRecovery,
+      segmentHash: env.segmentHash, indexHash: prefix === "veranode.s" ? env.indexHash : undefined,
+      files: files, deferRecovery: deferRecovery,
       progress: function(done, total) { if (env.progress) env.progress(label, done, total); }});
   }
   var samples = journal("veranode.s", sampleSegments, 32, "Campioni");
