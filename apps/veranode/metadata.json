@@ -49,6 +49,9 @@
       "wildcard": "veranode.smap?"
     },
     {
+      "wildcard": "veranode.stail?"
+    },
+    {
       "name": "veranode.time.json"
     },
     {

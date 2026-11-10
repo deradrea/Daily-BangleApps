@@ -1,7 +1,7 @@
 /* global bleServices, bleServiceOptions */
 (function() {
   if (global.VeraNode || (global.VeraBoot && global.VeraBoot.resume)) return;
-  var started = Date.now(), lastPaint = 0, clockShown = false;
+  var started = Date.now(), clockShown = false;
   var startup = global.VeraBoot = {phase: "Sistema", done: 0, total: 0, elapsedMs: 0};
   function progress(phase, done, total) {
     // Display feedback is optional: it must never prevent data acquisition.
@@ -13,22 +13,19 @@
     startup.phase = phase; startup.done = done; startup.total = total;
     if (typeof g === "undefined") return;
     var failed = phase === "Errore avvio";
-    if (clockShown && !failed && phase !== "Pronto" && Date.now() - lastPaint < 250) return;
+    if (clockShown && !failed && phase !== "Pronto") return;
     Bangle.setLCDPower(true); Bangle.setLCDBrightness(1); Bangle.setBacklight(true);
     var x = g.getWidth() / 2, now = new Date();
     var hh = ("0" + now.getHours()).slice(-2), mm = ("0" + now.getMinutes()).slice(-2);
     g.reset().setBgColor("#000000").clear().setColor("#00ffff").setFont("Vector", 23).setFontAlign(0, -1);
     g.drawString("VERA", x, 18).setColor("#ffffff").setFont("Vector", 43);
     g.drawString(hh + ":" + mm, x, 54).setFont("Vector", 15);
-    g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Verifica archivio", x, 118);
-    if (total > 0 && phase !== "Pronto")
-      g.setFont("Vector", 12).drawString(phase + " " + done + "/" + total, x, 141);
+    g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Avvio raccolta", x, 118);
     if (g.flip) g.flip();
     if (!clockShown && !failed) {
       startup.firstClockMs = Date.now() - started;
       clockShown = true;
     }
-    lastPaint = Date.now();
   }
   progress("Sistema", 0, 0);
   try {

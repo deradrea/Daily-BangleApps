@@ -8,14 +8,14 @@ const options = {maxSegments: 92, segmentRecords: 32, indexHash: crc32};
 const journal = storage => new Journal(storage, 's', options);
 const append = (target, value) => target.append('sample', 10, {value});
 
-test('full indexed archive reopens only its active segment and serves intact historical rows', () => {
+test('full indexed archive opens no sample files on normal boot and serves intact historical rows', () => {
   const storage = new MemoryStorage(), writer = journal(storage);
   for (let i = 0; i < 2881; i++) append(writer, i);
   const before = [...storage.files];
   const opened = [], open = storage.open.bind(storage);
   storage.open = (name, mode) => { opened.push(name); return open(name, mode); };
   const reader = journal(storage);
-  assert.deepEqual(opened, ['s90']);
+  assert.deepEqual(opened, []);
   assert.equal(reader.pending(), 2881);
   assert.equal(reader.next, 2882);
   assert.equal(reader.readBatch(0, 1)[0].data.value, 0);
@@ -86,4 +86,33 @@ test('legacy archive migration writes an index while preserving the raw journal'
   assert.equal(journal(storage).next, 34);
   assert.deepEqual([...storage.files], before);
   assert.ok(storage.read('smap0'));
+});
+
+test('loss of the commit receipt recovers the written row and restores metadata-only boot', () => {
+  const storage = new MemoryStorage(), writer = journal(storage);
+  assert.equal(append(writer, 1).seq, 1);
+  const write = storage.write.bind(storage);
+  storage.write = (name, bytes) => {
+    if (name === 'stail1') { write(name, bytes.slice(0, 12)); throw Error('power cut'); }
+    write(name, bytes);
+  };
+  assert.throws(() => append(writer, 2), /power cut/);
+  storage.write = write;
+  assert.equal(journal(storage).next, 3);
+  const opened = [], open = storage.open.bind(storage);
+  storage.open = (name, mode) => { opened.push(name); return open(name, mode); };
+  assert.equal(journal(storage).next, 3);
+  assert.deepEqual(opened, []);
+});
+
+test('advancing a partial ACK keeps the open tail ready without a sample read at boot', () => {
+  const storage = new MemoryStorage(), writer = journal(storage);
+  for (let i = 0; i < 5; i++) append(writer, i);
+  writer.ack(writer.checkpoint.epoch, 3);
+  const opened = [], open = storage.open.bind(storage);
+  storage.open = (name, mode) => { opened.push(name); return open(name, mode); };
+  const recovered = journal(storage);
+  assert.equal(recovered.pending(), 2);
+  assert.equal(recovered.next, 6);
+  assert.deepEqual(opened, []);
 });

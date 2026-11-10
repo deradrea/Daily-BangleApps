@@ -83,7 +83,10 @@ function Journal(storage, prefix, options) {
   // A published index is usable only for the exact custody generation and
   // flash inventory. Otherwise recover the legacy segments and rebuild it.
   var indexed = this.indexHash && !this.eraseLock && this.restoreIndex(present);
-  if (indexed) existing = indexed.active === null || !present[indexed.active] ? [] : [indexed.active];
+  if (indexed) {
+    existing = indexed.active === null || !present[indexed.active] || this.restoreTail(indexed.active) ?
+      [] : [indexed.active];
+  }
   var file, segment, refreshIndex = !indexed;
   function progress() { if (options.progress) options.progress(recovered, existing.length); }
   function finishSegment() {
@@ -125,7 +128,7 @@ function Journal(storage, prefix, options) {
         continue;
       }
       var row = unpack(line);
-      if (!row || !finite(row.seq) || row.seq < 1) { if (line !== "") segment.sealed = true; continue; }
+      if (!row || !finite(row.seq) || row.seq < 1) { if (line !== "" && line !== "\n") segment.sealed = true; continue; }
       segment.count++;
       segment.last = Math.max(segment.last, row.seq);
       self.next = Math.max(self.next, row.seq + 1);
@@ -134,6 +137,12 @@ function Journal(storage, prefix, options) {
     self.segments.sort(function(x, y) { return x.last - y.last; });
     if (refreshIndex && self.indexHash && !self.eraseLock) {
       try { self.saveIndex(); } catch (_) { /* Existing rows remain readable. */ }
+    }
+    // A legacy or interrupted open segment was inspected once. Persist its
+    // recovered cursor so the next normal boot need not open the sample file.
+    var tail = self.segments[self.segments.length - 1];
+    if (indexed && existing.length && !refreshIndex && tail && !tail.sealed) {
+      try { self.saveTail(tail, tail.count, tail.last, tail.needsSeparator); } catch (_) {}
     }
     delete self.recover;
     return true;
@@ -180,6 +189,42 @@ Journal.prototype.restoreIndex = function(present) {
   self.next = Math.max(self.next, last + 1);
   return index;
 };
+Journal.prototype.restoreTail = function(slot) {
+  try {
+    var intent = this.storage.read(this.prefix + "tail0");
+    var commit = this.storage.read(this.prefix + "tail1");
+    if (!intent || intent !== commit || intent.length > 512) return false;
+    var envelope = JSON.parse(intent), body = envelope[1];
+    if (typeof body !== "string" || this.indexHash(body) !== envelope[0]) return false;
+    var state = JSON.parse(body);
+    if (state.epoch !== this.checkpoint.epoch || state.index !== this.indexGeneration ||
+        state.slot !== slot || !finite(state.count) || Math.floor(state.count) !== state.count ||
+        state.count < 1 || state.count > this.segmentRecords ||
+        !finite(state.last) || Math.floor(state.last) !== state.last || state.last < state.count ||
+        (this.segments.length && state.last <= this.segments[this.segments.length - 1].last) ||
+        typeof state.separator !== "boolean") return false;
+    this.segments.push({name: this.prefix + slot, count: state.count, last: state.last,
+      sealed: state.count === this.segmentRecords, needsSeparator: state.separator});
+    this.next = Math.max(this.next, state.last + 1);
+    return true;
+  } catch (_) { return false; }
+};
+Journal.prototype.tailReceipt = function(segment, count, last, separator) {
+  var body = JSON.stringify({epoch: this.checkpoint.epoch, index: this.indexGeneration,
+    slot: Number(segment.name.slice(this.prefix.length)), count: count, last: last,
+    separator: separator === true});
+  return JSON.stringify([this.indexHash(body), body]);
+};
+Journal.prototype.writeTailReceipt = function(slot, bytes) {
+  var file = this.prefix + "tail" + slot;
+  this.storage.write(file, bytes);
+  if (this.storage.read(file) !== bytes) throw new Error("Checkpoint campione non confermato");
+};
+Journal.prototype.saveTail = function(segment, count, last, separator) {
+  var bytes = this.tailReceipt(segment, count, last, separator);
+  this.writeTailReceipt(0, bytes);
+  this.writeTailReceipt(1, bytes);
+};
 Journal.prototype.saveIndex = function(active) {
   if (!this.indexHash || this.eraseLock) return;
   var self = this, sealed = [], reserving = active !== undefined;
@@ -199,6 +244,9 @@ Journal.prototype.saveIndex = function(active) {
   if (this.storage.read(file) !== bytes) throw new Error("Indice archivio non confermato");
   this.indexGeneration = generation;
   this.indexCustody = this.checkpoint.generation;
+  var tail = this.segments[this.segments.length - 1];
+  if (!reserving && tail && !tail.sealed && tail.count > 0)
+    this.saveTail(tail, tail.count, tail.last, tail.needsSeparator);
 };
 Journal.prototype.cacheSegment = function(segment) {
   if (!this.segmentHash || segment.count !== this.segmentRecords) return;
@@ -238,7 +286,13 @@ Journal.prototype.append = function(kind, at, payload) {
   }
   // A torn final line seals the segment on reboot, preserving prior records.
   if (this.reader && this.reader.segment === segment) this.reader = null;
-  try { this.storage.open(segment.name, "a").write((segment.needsSeparator ? "\n" : "") + encoded + "\n"); }
+  try {
+    var receipt = this.indexHash && !this.eraseLock ?
+      this.tailReceipt(segment, segment.count + 1, this.next, false) : null;
+    if (receipt) this.writeTailReceipt(0, receipt);
+    this.storage.open(segment.name, "a").write((segment.needsSeparator ? "\n" : "") + encoded + "\n");
+    if (receipt) this.writeTailReceipt(1, receipt);
+  }
   catch (e) { if (this.indexHash) this.writeUncertain = true; else segment.sealed = true; throw e; }
   segment.needsSeparator = false;
   segment.count++;

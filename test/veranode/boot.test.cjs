@@ -11,7 +11,7 @@ test('system boot keeps Vera GATT services and starts sensors only after service
   const context = {global: {}, bleServices: {'abcd': {}}, bleServiceOptions: {uart: false},
     g: graphics,
     require: name => { if (name === 'Storage') return f.storage;
-      assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Verifica archivio'));
+      assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Avvio raccolta'));
       return name === 'veranode.core.js' ? core : name === 'veranode.clock.js' ? require('../../apps/veranode/clock.js') : name === 'veranode.wire.js' ? require('../../apps/veranode/wire.js') : runtime; },
     Date, setTimeout: f.clock.setTimeout, clearTimeout: f.clock.clearTimeout,
     setInterval: f.clock.setInterval, clearInterval: f.clock.clearInterval,
