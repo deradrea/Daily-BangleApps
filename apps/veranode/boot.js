@@ -13,14 +13,29 @@
     startup.phase = phase; startup.done = done; startup.total = total;
     if (typeof g === "undefined") return;
     var failed = phase === "Errore avvio";
-    if (!failed && (startup.faceShown || (clockShown && phase !== "Pronto"))) return;
+    if (startup.faceShown && !failed) {
+      if (phase !== "Pronto" && startup.drawProgress) startup.drawProgress(done, total);
+      return;
+    }
+    if (clockShown && !failed && phase !== "Pronto") return;
     Bangle.setLCDPower(true); Bangle.setLCDBrightness(1); Bangle.setBacklight(true);
-    var x = g.getWidth() / 2, now = new Date();
-    var hh = ("0" + now.getHours()).slice(-2), mm = ("0" + now.getMinutes()).slice(-2);
-    g.reset().setBgColor("#000000").clear().setColor("#00ffff").setFont("Vector", 23).setFontAlign(0, -1);
-    g.drawString("VERA", x, 18).setColor("#ffffff").setFont("Vector", 43);
-    g.drawString(hh + ":" + mm, x, 54).setFont("Vector", 15);
-    g.drawString(failed ? "Avvio interrotto" : phase === "Pronto" ? "Avviato" : "Avvio raccolta", x, 118);
+    var x = g.getWidth() / 2, ready = phase === "Pronto";
+    var color = failed ? "#ffff00" : ready ? "#00ff00" : "#00ffff";
+    g.reset().setBgColor("#000000").clear().setColor("#ffffff").setFont("Vector", 22).setFontAlign(0, -1);
+    g.drawString("VERA", x, 15);
+    g.setColor("#0000ff").fillCircle(x, 85, 35);
+    g.setColor("#000000").fillCircle(x, 85, 31);
+    g.setColor(color);
+    if (failed) {
+      g.drawPoly([x, 68, x + 17, 101, x - 17, 101, x, 68]);
+      g.drawPoly([x, 79, x, 89]);
+      g.fillCircle(x, 94, 1);
+    } else if (ready) {
+      g.drawPoly([x - 13, 85, x - 4, 95, x + 15, 76]);
+    } else {
+      g.drawPoly([x - 20, 85, x - 9, 85, x - 4, 74, x + 4, 98, x + 10, 85, x + 20, 85]);
+    }
+    g.setFont("Vector", 15).drawString(failed ? "Avvio interrotto" : ready ? "Avviato" : "Avvio raccolta", x, 137);
     if (g.flip) g.flip();
     if (!clockShown && !failed) {
       startup.firstClockMs = Date.now() - started;
@@ -30,7 +45,11 @@
   progress("Sistema", 0, 0);
   try {
   var storage = require("Storage");
-  var wire = require("veranode.wire.js"), server, txBytes = 20;
+  // The bootloader needs the GATT definitions synchronously. Load the RPC
+  // implementation after the foreground clock has had a chance to draw.
+  var uuidSuffix = "-7b2c-4c61-9e3a-5f42616e676c";
+  var managementService = "d4a10000" + uuidSuffix, request = "d4a10001" + uuidSuffix;
+  var response = "d4a10002" + uuidSuffix, wire, server, txBytes = 20;
   var ids = {
     "2a37": "180d", "2a1f": "181a",
     "e95d0753-251d-470a-a062-fa1922dfa9a8": "e95d0753-251d-470a-a062-fa1922dfa9a8"
@@ -41,10 +60,10 @@
     services[ids[id]][id] = {value: id === "2a37" ? [0, 0] : [], maxLen: id === "2a37" ? 3 : id === "2a1f" ? 2 : 6,
       notify: true, readable: true};
   });
-  services[wire.service] = {};
-  services[wire.service][wire.request] = {writable: true, maxLen: 20,
+  services[managementService] = {};
+  services[managementService][request] = {writable: true, maxLen: 20,
     security: {write: {encrypted: true}}, onWrite: function(event) { if (server) server.receive(new Uint8Array(event.data)); }};
-  services[wire.service][wire.response] = {value: [], maxLen: 180, notify: true,
+  services[managementService][response] = {value: [], maxLen: 180, notify: true,
     security: {read: {encrypted: true}}};
   // Preserve maintenance access in this explicitly development-only package.
   // No remote rule write or ACK is exposed until authenticated provisioning exists.
@@ -54,6 +73,7 @@
   } else NRF.setServices(services, {uart: true});
   var runtime, env;
   function loadRuntime() {
+    wire = require("veranode.wire.js");
     runtime = require("veranode.runtime.js");
     env = {
       progress: progress,
@@ -139,6 +159,7 @@
     } catch (e) { fail(e); return; }
     var onReady = startup.onReady;
     delete startup.onReady;
+    delete startup.drawProgress;
     if (onReady) {
       try { onReady(); } catch (_) { startup.displayError = true; }
     }
@@ -150,6 +171,7 @@
   function fail(e) {
     delete startup.resume;
     delete startup.onReady;
+    delete startup.drawProgress;
     startup.failed = true; startup.failurePhase = startup.phase;
     startup.error = String(e).slice(0, 120);
     progress("Errore avvio", 0, 0);

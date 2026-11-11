@@ -23,7 +23,7 @@ test('expanded journal retains legacy full archive and continues its epoch and s
  for(let i=0;i<256;i++) old.append('sample',i*30000,{scope:'unprovisioned',values:{}});
  const bytes=[...p.storage.files.entries()], epoch=old.checkpoint.epoch;
  const node=runtime.create(p.env);node.start();
- assert.equal(node.samples.stats().capacity,2944);
+ assert.equal(node.samples.stats().capacity,5888);
  assert.equal(node.samples.checkpoint.epoch,epoch);
  assert.equal(node.samples.next,258);
  for(const [name,raw] of bytes) assert.equal(p.storage.files.get(name),raw);
@@ -44,11 +44,11 @@ test('a smaller requested quota discovers existing high numbered segments withou
  assert.ok(reboot.append('sample',25,{}));
 });
 
-for(const recordMs of [10000,30000,45000]) test('24h offline cadence '+recordMs+' preserves every sample and survives reboot',async()=>{
+for(const recordMs of [10000,30000,45000]) test('extended offline cadence '+recordMs+' preserves every sample and survives reboot',async()=>{
  const p=platform(core);p.clock.time=Date.UTC(2026,9,16);
  p.storage.write('veranode.config.json',JSON.stringify({recordMs}));
  let node=runtime.create(p.env);node.start();await Promise.resolve();
- const count=Math.ceil(86400000/recordMs);
+ const count=Math.min(Math.ceil(172800000/recordMs),8640);
  for(let i=0;i<count;i++) {
   p.bus.emit('HRM',{bpm:72,confidence:99});
   p.clock.advance(recordMs);await Promise.resolve();

@@ -106,7 +106,7 @@ function Journal(storage, prefix, options) {
         var name = prefix + existing[recovered];
         var cached = !indexed && unpack(storage.read(name + "idx")), fingerprint = null;
         if (self.segmentHash && cached && cached.epoch === self.checkpoint.epoch &&
-          cached.count === self.segmentRecords && finite(cached.last) && cached.last >= cached.count) {
+          finite(cached.count) && cached.count > 0 && cached.count <= self.segmentRecords && finite(cached.last) && cached.last >= cached.count) {
           try { fingerprint = self.segmentHash(name); } catch (e) { fingerprint = null; }
         }
         if (fingerprint && fingerprint.hash === cached.hash && fingerprint.bytes === cached.bytes) {
@@ -122,7 +122,7 @@ function Journal(storage, prefix, options) {
       var line = file.readLine();
       budget--;
       if (line === undefined) {
-        if (segment.count >= self.segmentRecords) segment.sealed = true;
+        if (segment.count >= self.segmentRecords || (!indexed && segment.count === options.legacySegmentRecords)) segment.sealed = true;
         self.cacheSegment(segment);
         finishSegment();
         continue;

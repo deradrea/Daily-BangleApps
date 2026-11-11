@@ -15,6 +15,16 @@ test('release reproducible, immutable, all install bytes hashed and registry las
     assert.equal(bytes.length,file.size);
     assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),file.sha256);
   }
+  const acorn=require('acorn');
+  const metadata=JSON.parse(fs.readFileSync(path.resolve(__dirname,'../../apps/veranode/metadata.json'),'utf8'));
+  const ast=code=>JSON.stringify(acorn.parse(code,{ecmaVersion:2015}),
+    (key,value)=>['start','end','raw'].includes(key)?undefined:value);
+  for(const entry of metadata.storage.filter(entry=>entry.url.endsWith('.js')&&!entry.evaluate)){
+    const source=fs.readFileSync(path.resolve(__dirname,'../../apps/veranode',entry.url),'utf8');
+    const payload=Buffer.from(p.files.find(file=>file.name===entry.name).base64,'base64').toString('utf8');
+    assert.equal(ast(payload),ast(source),entry.name);
+    assert.ok(Buffer.byteLength(payload)<Buffer.byteLength(source),entry.name);
+  }
   const info=JSON.parse(Buffer.from(p.files.at(-1).base64,'base64'));
   assert.equal(info.src,'veranode.app.js');assert.equal(info.type,'clock');
   assert.equal(new Set(info.files.split(',')).size,8);

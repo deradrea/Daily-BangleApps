@@ -55,7 +55,28 @@
   }
   var startup = global.VeraBoot;
   if (startup && startup.resume) {
-    var currentFile = global.__FILE__;
+    var currentFile = global.__FILE__, previousArcAt = -Infinity;
+    startup.drawProgress = function(done, total) {
+      var now = Date.now();
+      if (global.__FILE__ !== currentFile || now - previousArcAt < 200) return;
+      previousArcAt = now;
+      var ratio = total > 0 ? Math.max(0, Math.min(1, done / total)) : null;
+      var count = ratio === null ? 8 : Math.floor(ratio * 48);
+      var start = ratio === null ? Math.floor(startup.elapsedMs / 100) : 0;
+      var track = [], arc = [];
+      for (var i = 0; i <= 48; i++) {
+        var a = i * Math.PI / 24 - Math.PI / 2;
+        track.push(88 + Math.cos(a) * 46, 69 + Math.sin(a) * 46);
+        if (i <= count) {
+          a += start * Math.PI / 24;
+          arc.push(88 + Math.cos(a) * 46, 69 + Math.sin(a) * 46);
+        }
+      }
+      // Draw only the ring. The labels and placeholders remain readable.
+      g.setColor("#0000ff").drawPoly(track);
+      if (count) g.setColor(colors.accent).drawPoly(arc);
+      if (g.flip) g.flip();
+    };
     startup.onReady = function() {
       if (global.__FILE__ === currentFile) openVeraFace();
     };
@@ -68,6 +89,7 @@
         if (g.flip) g.flip();
         startup.faceShown = true;
         startup.faceAt = Date.now();
+        startup.drawProgress(0, 0);
       }
     } catch (_) { startup.displayError = true; }
     startup.resume();

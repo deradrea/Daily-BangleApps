@@ -48,6 +48,18 @@ function validateDependencies(code, installedNames) {
   }
   walk(acorn.parse(code, {ecmaVersion: 2015}));
 }
+// Keep the original tokens and significant line breaks. Only inter-token
+// whitespace and comments are reduced in the generated watch payload.
+function compactSource(code) {
+  let output = '', end = 0;
+  for (const token of acorn.tokenizer(code, {ecmaVersion: 2015})) {
+    const gap = code.slice(end, token.start);
+    if (end && gap) output += /[\r\n\u2028\u2029]/.test(gap) ? '\n' : ' ';
+    output += code.slice(token.start, token.end);
+    end = token.end;
+  }
+  return output + '\n';
+}
 function build(outputRoot = path.join(root, 'dist/veranode')) {
   const source = path.join(root, 'apps/veranode');
   const metadata = JSON.parse(fs.readFileSync(path.join(source, 'metadata.json')));
@@ -67,7 +79,10 @@ function build(outputRoot = path.join(root, 'dist/veranode')) {
   const installedNames = new Set(metadata.storage.map(entry => entry.name));
   const files = metadata.storage.map(entry => {
     let bytes = fs.readFileSync(path.join(source, entry.url));
-    if (entry.url.endsWith('.js') && !entry.evaluate) validateDependencies(bytes.toString('utf8'), installedNames);
+    if (entry.url.endsWith('.js') && !entry.evaluate) {
+      bytes = Buffer.from(compactSource(bytes.toString('utf8')));
+      validateDependencies(bytes.toString('utf8'), installedNames);
+    }
     if (entry.evaluate) {
       const literal = bytes.toString().trim().match(/^atob\("([A-Za-z0-9+/=]+)"\)$/);
       if (!literal) throw Error('Only a literal base64 icon can be evaluated');

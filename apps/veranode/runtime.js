@@ -4,19 +4,21 @@ function openArchives(env, deferRecovery) {
   var config = storage.readJSON("veranode.config.json", true) || {};
   var intervalMs = typeof config.recordMs === "number" && isFinite(config.recordMs) ?
     Math.max(10000, Math.min(45000, config.recordMs)) : 30000;
-  // 24 hours at the configured cadence, plus two segments for partial ACKs.
-  // Reserve quota, not RAM: records continue to be appended directly to flash.
-  var sampleSegments = Math.ceil(86400000 / intervalMs / 32) + 2;
+  // Aim for 48 hours while bounding the fastest cadence at 8,640 samples.
+  // Larger segments amortize flash allocation and index updates.
+  var sampleRecords = 64;
+  var sampleLimit = Math.min(Math.ceil(172800000 / intervalMs), 8640);
+  var sampleSegments = Math.ceil(sampleLimit / sampleRecords) + 2;
   // A single inventory is enough: initialization only creates normal metadata
   // files; no StorageFile is appended until the collector starts.
   var files = storage.list(undefined, {sf: true});
   function journal(prefix, segments, records, label) {
-    return new core.Journal(storage, prefix, {maxSegments: segments, segmentRecords: records,
+    return new core.Journal(storage, prefix, {maxSegments: segments, segmentRecords: records, legacySegmentRecords: prefix === "veranode.s" ? 32 : undefined,
       segmentHash: env.segmentHash, indexHash: prefix === "veranode.s" ? env.indexHash : undefined,
       files: files, deferRecovery: deferRecovery,
       progress: function(done, total) { if (env.progress) env.progress(label, done, total); }});
   }
-  var samples = journal("veranode.s", sampleSegments, 32, "Campioni");
+  var samples = journal("veranode.s", sampleSegments, sampleRecords, "Campioni");
   var events = journal("veranode.e", 4, 16, "Eventi");
   var timeHistory = env.timeFactory ? journal("veranode.t", 4, 16, "Orario") : null;
   return {intervalMs: intervalMs, samples: samples, events: events, timeHistory: timeHistory};

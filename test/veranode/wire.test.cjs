@@ -192,7 +192,7 @@ test('status exposes bounded capacity and optional hardware without writing sens
  f.command({id:'auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});f.server.decide(true);f.responses();
  f.node.samples.append('sample',1,{});const before=[...f.p.storage.files.entries()];
  f.command({id:'read',op:'status'});const state=f.responses()[0].result;
- assert.deepEqual(state.buffers.samples,{capacity:2944,stored:1,pending:1,available:2943,full:false});
+ assert.deepEqual(state.buffers.samples,{capacity:5888,stored:1,pending:1,available:5887,full:false});
  assert.equal(state.recordIntervalMs,30000);assert.equal(state.hardware.batteryPercent,91);
  assert.equal(state.contextConfigured,false);assert.deepEqual([...f.p.storage.files.entries()],before);
  const bad=setup(false,()=>{throw new Error('hardware unavailable');});
