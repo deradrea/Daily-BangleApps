@@ -27,11 +27,24 @@ test('system boot keeps Vera GATT services and starts sensors only after service
   const wire = require("../../apps/veranode/wire.js");
   assert.ok(context.bleServices[wire.service][wire.request]);
   assert.ok(context.bleServices[wire.service][wire.response]);
+  const sample = 'd4a10003-7b2c-4c61-9e3a-5f42616e676c';
+  assert.equal(context.bleServices[wire.service][sample].maxLen, 12);
   assert.equal(f.power.length, 0);
   f.clock.advance(0); assert.equal(f.power.at(-1), true);
   assert.equal(context.global.VeraBoot.phase,'Pronto');
   assert.ok(graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Avviato'));
   assert.ok(display.length>1);
+  const sampleNotifications = () => updated.filter(s => s[wire.service]?.[sample]);
+  assert.equal(sampleNotifications().length, 0);
+  f.bus.emit('connect');
+  assert.equal(sampleNotifications().length, 0);
+  f.clock.advance(30000);
+  const [notification] = sampleNotifications();
+  assert.equal(sampleNotifications().length, 1);
+  assert.equal(notification[wire.service][sample].value.length, 12);
+  f.bus.emit('disconnect');
+  f.clock.advance(30000);
+  assert.equal(sampleNotifications().length, 1);
   context.global.VeraNode.dispose();
 });
 

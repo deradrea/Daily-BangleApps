@@ -174,6 +174,10 @@ exports.create = function(env, archives) {
         else if (["Memoria campioni piena", "Spazio insufficiente", "Errore memoria campioni"].includes(state.storageError)) state.storageError = null;
       }
     } catch (e) { state.storageError = "Errore memoria campioni"; state.paused = true; }
+    if (state.connected && env.publishSample) {
+      try { env.publishSample(core.sampleFrame(values, now)); }
+      catch (_) { /* The local record remains available for recovery. */ }
+    }
     changed(); notify();
   }
   function installPolicy(profile, trusted) {

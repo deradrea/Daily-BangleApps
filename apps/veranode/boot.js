@@ -49,7 +49,8 @@
   // implementation after the foreground clock has had a chance to draw.
   var uuidSuffix = "-7b2c-4c61-9e3a-5f42616e676c";
   var managementService = "d4a10000" + uuidSuffix, request = "d4a10001" + uuidSuffix;
-  var response = "d4a10002" + uuidSuffix, wire, server, txBytes = 20;
+  var response = "d4a10002" + uuidSuffix, sample = "d4a10003" + uuidSuffix;
+  var wire, server, txBytes = 20;
   var ids = {
     "2a37": "180d", "2a1f": "181a",
     "e95d0753-251d-470a-a062-fa1922dfa9a8": "e95d0753-251d-470a-a062-fa1922dfa9a8"
@@ -65,6 +66,7 @@
     security: {write: {encrypted: true}}, onWrite: function(event) { if (server) server.receive(new Uint8Array(event.data)); }};
   services[managementService][response] = {value: [], maxLen: 180, notify: true,
     security: {read: {encrypted: true}}};
+  services[managementService][sample] = {value: [], maxLen: 12, notify: true};
   // Preserve maintenance access in this explicitly development-only package.
   // No remote rule write or ACK is exposed until authenticated provisioning exists.
   if (typeof bleServices !== "undefined") {
@@ -94,6 +96,12 @@
       on: function(event, fn) { (event === "HRM" ? Bangle : NRF).on(event, fn); },
       off: function(event, fn) { (event === "HRM" ? Bangle : NRF).removeListener(event, fn); },
       buzz: function(ms) { Bangle.buzz(ms, 0.5); },
+      publishSample: function(bytes) {
+        var changes = {};
+        changes[managementService] = {};
+        changes[managementService][sample] = {value: bytes, notify: true};
+        NRF.updateServices(changes);
+      },
       publish: function(frames) {
         var changes = {};
         Object.keys(ids).forEach(function(id) {

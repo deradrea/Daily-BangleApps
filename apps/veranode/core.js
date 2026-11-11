@@ -597,6 +597,15 @@ exports.RuleEngine = RuleEngine;
 exports.DisplayState = DisplayState;
 exports.validatePolicy = validatePolicy;
 exports.frames = frames;
+exports.sampleFrame = function(values, now) {
+  var live = frames(values, now);
+  var heart = live["2a37"], temperature = live["2a1f"];
+  var acceleration = live["e95d0753-251d-470a-a062-fa1922dfa9a8"];
+  var flags = (heart[1] || heart[2] ? 1 : 0) |
+    (temperature ? 2 : 0) | (acceleration ? 4 : 0);
+  return [1, flags, heart[1], heart[2] || 0]
+    .concat(temperature || [0, 0], acceleration || [0, 0, 0, 0, 0, 0]);
+};
 exports.pack = pack;
 exports.unpack = unpack;
 exports.validatePresentation = validatePresentation;
