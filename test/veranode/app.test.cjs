@@ -694,3 +694,24 @@ test('remote preferences apply without waking LCD, preserve navigation and conse
  assert.equal(f.power.at(-1),true);assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Solo display'));
  f.input.remove();assert.equal(preferences.listeners.length,0);assert.equal(f.clock.timers.size,0);
 });
+
+test('clock draws its regular face before the boot journal or sensors are available', () => {
+  const graphics = new Graphics();
+  let resumed = false;
+  const startup = {resume() {
+    const labels = graphics.commands.filter(c => c.type === 'text').map(c => c.args[0]);
+    assert.ok(labels.includes('A244') && labels.includes('bpm') && labels.includes('\u00b0C'));
+    assert.ok(labels.includes('--'));
+    resumed = true;
+  }};
+  const context = {g: graphics, Date, global: {VeraBoot: startup, __FILE__: 'veranode.app.js'},
+    E: {getBattery: () => 80}, Bangle: {isCharging: () => false},
+    NRF: {getAddress: () => 'AA:BB:CC:DD:A2:44 random', getSecurityStatus: () => ({connected: false})},
+    require() { throw new Error('The first face must not load the runtime'); }};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../../apps/veranode/app.js'), 'utf8'), context);
+  assert.equal(resumed, true);
+  assert.equal(startup.faceShown, true);
+  context.global.__FILE__ = 'other.app.js';
+  delete startup.resume;
+  assert.doesNotThrow(() => startup.onReady());
+});

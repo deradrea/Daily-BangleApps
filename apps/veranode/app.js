@@ -1,7 +1,75 @@
 (function openVeraFace() {
+  var colors = {bg: "#000000", surface: "#000000", text: "#ffffff", muted: "#ffffff",
+    success: "#00ff00", accent: "#00ffff", heart: "#ff0000", warning: "#ffff00"};
+  function text(value, x, y, size, color, align, maxWidth) {
+    value=String(value); align=align === undefined ? -1 : align;
+    var available=align===0 ? Math.min(x-4,g.getWidth()-4-x)*2 : align===1 ? x-4 : g.getWidth()-4-x;
+    if(typeof maxWidth==="number") available=Math.min(available,maxWidth);
+    g.setFont("Vector",size);
+    while(size>10 && g.stringWidth(value)>available)g.setFont("Vector",--size);
+    g.setColor(color || colors.text).setFontAlign(align,-1).drawString(value,x,y);
+  }
+  function heart(x, y) {
+    g.setColor(colors.heart).fillCircle(x - 3, y, 4).fillCircle(x + 3, y, 4);
+    g.fillPoly([x - 7, y, x + 7, y, x, y + 9]);
+  }
+  function bluetooth(x, y, connected) {
+    g.setColor(connected ? colors.accent : colors.warning);
+    g.drawPoly([x, y - 8, x, y + 8, x + 6, y + 3, x - 5, y - 5]);
+    g.drawPoly([x - 5, y + 5, x + 6, y - 3, x, y - 8]);
+    if (!connected) g.drawPoly([x - 8, y - 9, x + 9, y + 9]);
+  }
+  function drawHeader(w, battery, mac) {
+    var batteryKnown = typeof battery === "number" && isFinite(battery);
+    battery = batteryKnown ? Math.max(0, Math.min(100, battery)) : 0;
+    [5, 11, 17].forEach(function(y) { g.setColor(colors.text).drawPoly([3, y, 12, y]); });
+    text(mac.replace(/:/g, "").slice(-4), 38, 4, 12, colors.muted, 0);
+    var now = new Date();
+    text(("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2), w / 2, 4, 12, colors.text, 0);
+    text(batteryKnown ? Math.round(battery) + "%" : "--%", 148, 5, 11, colors.text, 1);
+    g.setColor(colors.muted).drawRect(152, 5, 168, 17).fillRect(169, 8, 171, 14);
+    if (battery > 0) g.setColor(colors.accent).fillRect(154, 7, 154 + Math.round(12 * battery / 100), 15);
+    // Shape communicates charging even without distinguishing colours.
+    if (Bangle.isCharging()) {
+      g.setColor(colors.success).fillPoly([113, 3, 107, 10, 111, 10, 109, 18, 117, 8, 113, 8]);
+    }
+  }
+  function drawMetrics(w, battito, temperatura, linked, pending, storageError, pinned) {
+    heart(w / 2, 36);
+    text(battito, w / 2, 46, 38, colors.text, 0);
+    text("bpm", w / 2, 86, 11, colors.text, 0);
+    // Keep this row above the status icons, without touching the trace area.
+    g.setColor(colors.accent).fillRect(48, 122, 54, 137).fillCircle(51, 136, 5);
+    g.setColor(colors.bg).fillRect(50, 124, 52, 133);
+    text(temperatura, w / 2, 121, 21, colors.text, 0);
+    text("\u00b0C", 135, 127, 12, colors.text, 0);
+    // Three equal status columns, with icons and captions on common baselines.
+    bluetooth(30, 154, linked);
+    text(linked ? "BLE ON" : "BLE OFF", 30, 165, 10, linked ? colors.accent : colors.warning, 0);
+    g.setColor(storageError ? colors.warning : colors.text).drawRect(82, 146, 94, 157);
+    g.drawPoly([84, 150, 92, 150]); g.drawPoly([84, 153, 92, 153]);
+    text(pending, 88, 165, 10, colors.text, 0);
+    g.setColor(colors.text).drawRect(140, 146, 152, 157);
+    if (pinned) g.fillRect(144, 149, 148, 154);
+    text(pinned ? "Fisso" : "10 s", 146, 165, 10, colors.text, 0);
+  }
   var startup = global.VeraBoot;
   if (startup && startup.resume) {
-    startup.onReady = openVeraFace;
+    var currentFile = global.__FILE__;
+    startup.onReady = function() {
+      if (global.__FILE__ === currentFile) openVeraFace();
+    };
+    try {
+      if (typeof g !== "undefined") {
+        var w = g.getWidth();
+        g.reset().setBgColor(colors.bg).clear();
+        drawHeader(w, E.getBattery(), NRF.getAddress().split(" ")[0].toUpperCase());
+        drawMetrics(w, "--", "--", !!NRF.getSecurityStatus().connected, "--", false, false);
+        if (g.flip) g.flip();
+        startup.faceShown = true;
+        startup.faceAt = Date.now();
+      }
+    } catch (_) { startup.displayError = true; }
     startup.resume();
     return;
   }
@@ -32,8 +100,6 @@
   var previousOptions = Bangle.getOptions();
   var previousBrightness = (require("Storage").readJSON("setting.json", 1) || {}).brightness;
   if (typeof previousBrightness !== "number") previousBrightness = 1;
-  var colors = {bg: "#000000", surface: "#000000", text: "#ffffff", muted: "#ffffff",
-    success: "#00ff00", accent: "#00ffff", heart: "#ff0000", warning: "#ffff00"};
   // Only a deliberate button press or an alert wakes the display. Measurements
   // continue in boot runtime; no face-up/tap gestures, no hidden redraw loop.
   Bangle.setOptions({wakeOnBTN1: false, wakeOnFaceUp: false, wakeOnTouch: false,
@@ -430,25 +496,7 @@
     g.setColor(colors.heart).fillCircle(centre, 110, 2);
 
   }
-  function text(value, x, y, size, color, align, maxWidth) {
-    value=String(value); align=align === undefined ? -1 : align;
-    var available=align===0 ? Math.min(x-4,g.getWidth()-4-x)*2 : align===1 ? x-4 : g.getWidth()-4-x;
-    if(typeof maxWidth==="number") available=Math.min(available,maxWidth);
-    g.setFont("Vector",size);
-    while(size>10 && g.stringWidth(value)>available)g.setFont("Vector",--size);
-    g.setColor(color || colors.text).setFontAlign(align,-1).drawString(value,x,y);
-  }
   function box(x, y, w, h) { g.setColor(colors.surface).fillRect(x, y, x + w, y + h); }
-  function heart(x, y) {
-    g.setColor(colors.heart).fillCircle(x - 3, y, 4).fillCircle(x + 3, y, 4);
-    g.fillPoly([x - 7, y, x + 7, y, x, y + 9]);
-  }
-  function bluetooth(x, y, connected) {
-    g.setColor(connected ? colors.accent : colors.warning);
-    g.drawPoly([x, y - 8, x, y + 8, x + 6, y + 3, x - 5, y - 5]);
-    g.drawPoly([x - 5, y + 5, x + 6, y - 3, x, y - 8]);
-    if (!connected) g.drawPoly([x - 8, y - 9, x + 9, y + 9]);
-  }
   var bleActionError = false;
   function toggleConnections() {
     var enabled = state.bleEnabled === false;
@@ -527,19 +575,7 @@
       button(8,88,168,124,"Sospendi BLE",18);
       button(8,135,168,174,"Annulla",18);return;
     }
-    var batteryKnown = typeof battery === "number" && isFinite(battery);
-    battery = batteryKnown ? Math.max(0, Math.min(100, battery)) : 0;
-    [5, 11, 17].forEach(function(y) { g.setColor(colors.text).drawPoly([3, y, 12, y]); });
-    text(state.mac.replace(/:/g, "").slice(-4), 38, 4, 12, colors.muted, 0);
-    var now = new Date();
-    text(("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2), w / 2, 4, 12, colors.text, 0);
-    text(batteryKnown ? Math.round(battery) + "%" : "--%", 148, 5, 11, colors.text, 1);
-    g.setColor(colors.muted).drawRect(152, 5, 168, 17).fillRect(169, 8, 171, 14);
-    if (battery > 0) g.setColor(colors.accent).fillRect(154, 7, 154 + Math.round(12 * battery / 100), 15);
-    // Shape communicates charging even without distinguishing colours.
-    if (Bangle.isCharging()) {
-      g.setColor(colors.success).fillPoly([113, 3, 107, 10, 111, 10, 109, 18, 117, 8, 113, 8]);
-    }
+    drawHeader(w, battery, state.mac);
     if (screen.alert) {
       var alert = screen.alert;
       box(7, 29, w - 15, 91);
@@ -570,24 +606,9 @@
     }
     // Centred metrics; cycle ring reflects runtime cadence, not heart beats.
     drawProgress();
-    heart(w / 2, 36);
-    text(value("battito", 0), w / 2, 46, 38, colors.text, 0);
-    text("bpm", w / 2, 86, 11, colors.text, 0);
-    // Keep this row above the status icons, without touching the trace area.
-    g.setColor(colors.accent).fillRect(48, 122, 54, 137).fillCircle(51, 136, 5);
-    g.setColor(colors.bg).fillRect(50, 124, 52, 133);
-    text(value("temperatura", 1), w / 2, 121, 21, colors.text, 0);
-    text("\u00b0C", 135, 127, 12, colors.text, 0);
-    var linked = !!NRF.getSecurityStatus().connected;
-    // Three equal status columns, with icons and captions on common baselines.
-    bluetooth(30, 154, linked);
-    text(linked ? "BLE ON" : "BLE OFF", 30, 165, 10, linked ? colors.accent : colors.warning, 0);
-    g.setColor(state.storageError ? colors.warning : colors.text).drawRect(82, 146, 94, 157);
-    g.drawPoly([84, 150, 92, 150]); g.drawPoly([84, 153, 92, 153]);
-    text(node.samples ? node.samples.pending() : "--", 88, 165, 10, colors.text, 0);
-    g.setColor(colors.text).drawRect(140, 146, 152, 157);
-    if (screen.mode === "pinned") g.fillRect(144, 149, 148, 154);
-    text(screen.mode === "pinned" ? "Fisso" : "10 s", 146, 165, 10, colors.text, 0);
+    drawMetrics(w, value("battito", 0), value("temperatura", 1),
+      !!NRF.getSecurityStatus().connected, node.samples ? node.samples.pending() : "--",
+      state.storageError, screen.mode === "pinned");
 
   }
   ui = new core.DisplayState(clock, draw, power, {timeout: displayValues.standbySeconds * 1000, doubleMs: 400, doubleOnMs: 700});
@@ -905,5 +926,3 @@
     if (!ui.alert) ui.show("temporary");
   }
 })();
-
-

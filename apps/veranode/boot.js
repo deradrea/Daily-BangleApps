@@ -13,7 +13,7 @@
     startup.phase = phase; startup.done = done; startup.total = total;
     if (typeof g === "undefined") return;
     var failed = phase === "Errore avvio";
-    if (clockShown && !failed && phase !== "Pronto") return;
+    if (!failed && (startup.faceShown || (clockShown && phase !== "Pronto"))) return;
     Bangle.setLCDPower(true); Bangle.setLCDBrightness(1); Bangle.setBacklight(true);
     var x = g.getWidth() / 2, now = new Date();
     var hh = ("0" + now.getHours()).slice(-2), mm = ("0" + now.getMinutes()).slice(-2);
@@ -30,7 +30,6 @@
   progress("Sistema", 0, 0);
   try {
   var storage = require("Storage");
-  var core = require("veranode.core.js");
   var wire = require("veranode.wire.js"), server, txBytes = 20;
   var ids = {
     "2a37": "180d", "2a1f": "181a",
@@ -53,35 +52,39 @@
     Object.keys(services).forEach(function(service) { bleServices[service] = services[service]; });
     bleServiceOptions.uart = true;
   } else NRF.setServices(services, {uart: true});
-  var runtime = require("veranode.runtime.js"), env = {
-    progress: progress,
-    core: core, storage: storage, mac: NRF.getAddress().split(" ")[0].toUpperCase(),
-    timeFactory: require("veranode.clock.js").create,
-    indexHash: typeof E !== "undefined" && typeof E.CRC32 === "function" ? function(text) { return E.CRC32(text); } : undefined,
-    segmentHash: function(name) {
-      var raw = storage.open(name, "r").read(60000);
-      if (typeof raw !== "string" || raw.length >= 60000) return null;
-      return {hash: E.CRC32(raw), bytes: raw.length};
-    },
-    clock: {now: Date.now, setWall: function(ms, timezoneMinutes) { setTime(ms / 1000); E.setTimeZone(timezoneMinutes / 60); }, setTimeout: setTimeout, clearTimeout: clearTimeout,
-      setInterval: setInterval, clearInterval: clearInterval},
-    hrm: function(on) { return Bangle.setHRMPower(on, "veranode"); },
-    accel: function() { return Bangle.getAccel(); },
-    pressure: function() { return Bangle.getPressure(); },
-    connected: function() { return !!NRF.getSecurityStatus().connected; },
-    on: function(event, fn) { (event === "HRM" ? Bangle : NRF).on(event, fn); },
-    off: function(event, fn) { (event === "HRM" ? Bangle : NRF).removeListener(event, fn); },
-    buzz: function(ms) { Bangle.buzz(ms, 0.5); },
-    publish: function(frames) {
-      var changes = {};
-      Object.keys(ids).forEach(function(id) {
-        if (!changes[ids[id]]) changes[ids[id]] = {};
-        // Clear stale readback values, without sending fabricated measurements.
-        changes[ids[id]][id] = {value: frames[id] || [], notify: !!frames[id]};
-      });
-      if (Object.keys(changes).length) NRF.updateServices(changes);
-    }
-  };
+  var runtime, env;
+  function loadRuntime() {
+    runtime = require("veranode.runtime.js");
+    env = {
+      progress: progress,
+      core: require("veranode.core.js"), storage: storage, mac: NRF.getAddress().split(" ")[0].toUpperCase(),
+      timeFactory: require("veranode.clock.js").create,
+      indexHash: typeof E !== "undefined" && typeof E.CRC32 === "function" ? function(text) { return E.CRC32(text); } : undefined,
+      segmentHash: function(name) {
+        var raw = storage.open(name, "r").read(60000);
+        if (typeof raw !== "string" || raw.length >= 60000) return null;
+        return {hash: E.CRC32(raw), bytes: raw.length};
+      },
+      clock: {now: Date.now, setWall: function(ms, timezoneMinutes) { setTime(ms / 1000); E.setTimeZone(timezoneMinutes / 60); }, setTimeout: setTimeout, clearTimeout: clearTimeout,
+        setInterval: setInterval, clearInterval: clearInterval},
+      hrm: function(on) { return Bangle.setHRMPower(on, "veranode"); },
+      accel: function() { return Bangle.getAccel(); },
+      pressure: function() { return Bangle.getPressure(); },
+      connected: function() { return !!NRF.getSecurityStatus().connected; },
+      on: function(event, fn) { (event === "HRM" ? Bangle : NRF).on(event, fn); },
+      off: function(event, fn) { (event === "HRM" ? Bangle : NRF).removeListener(event, fn); },
+      buzz: function(ms) { Bangle.buzz(ms, 0.5); },
+      publish: function(frames) {
+        var changes = {};
+        Object.keys(ids).forEach(function(id) {
+          if (!changes[ids[id]]) changes[ids[id]] = {};
+          // Clear stale readback values, without sending fabricated measurements.
+          changes[ids[id]][id] = {value: frames[id] || [], notify: !!frames[id]};
+        });
+        if (Object.keys(changes).length) NRF.updateServices(changes);
+      }
+    };
+  }
   function ready(archives) {
     global.VeraNode = runtime.create(env, archives);
     server = wire.create({chunkSize: function() { return txBytes; }, node: global.VeraNode, mac: global.VeraNode.state.mac,
@@ -121,6 +124,7 @@
     timer = undefined;
     try {
       if (!archives) {
+        loadRuntime();
         archives = runtime.openArchives(env, true);
         journals = [archives.samples, archives.events, archives.timeHistory];
       }
