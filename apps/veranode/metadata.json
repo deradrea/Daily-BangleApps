@@ -109,6 +109,9 @@
       "name": "veranode.config.json"
     },
     {
+      "name": "veranode.cadence"
+    },
+    {
       "name": "veranode.collection"
     },
     {

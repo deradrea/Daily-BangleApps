@@ -72,6 +72,30 @@ test('collection changes require owner consent and leave the archive intact', ()
   f.server.dispose();f.node.dispose();
 });
 
+test('owner sets a persisted cadence without deleting samples or generating an extra tick', () => {
+  const f = setup(), data = policy();
+  f.node.start();
+  f.command({id:'blocked', op:'record_interval_set', intervalMs:45000});
+  assert.equal(f.responses()[0].ok, false);
+  f.command({id:'owner',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});
+  f.server.decide(true);f.responses();
+  const before = f.node.samples.next;
+  f.command({id:'interval', op:'record_interval_set', intervalMs:45000});
+  assert.equal(f.responses()[0].result.recordIntervalMs, 45000);
+  assert.equal(f.node.samples.next, before);
+  f.command({id:'status', op:'status'});
+  const status = f.responses()[0].result;
+  assert.equal(status.capabilities.recordIntervalControl, true);
+  assert.equal(status.recordIntervalMs, 45000);
+  f.p.clock.advance(25000);
+  assert.equal(f.node.samples.next, before + 1);
+  f.server.dispose();f.node.dispose();
+  const reboot = runtime.create(f.p.env);
+  assert.equal(reboot.state.recordIntervalMs, 45000);
+  assert.equal(reboot.samples.next, before + 1);
+  reboot.dispose();
+});
+
 test('a visible unanswered consent expires at 60 seconds and a late Yes cannot authorize', () => {
   const f=setup(), data=policy();
   f.command({id:'timed-auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});

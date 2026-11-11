@@ -1,14 +1,18 @@
 /* Bangle.js2 platform adapter. Display absence and BLE disconnect never stop acquisition. */
+function sampleSlots(ms) {
+  return Math.ceil(Math.min(Math.ceil(172800000 / ms), 8640) / 64) + 2;
+}
 function openArchives(env, deferRecovery) {
   var core = env.core, storage = env.storage;
   var config = storage.readJSON("veranode.config.json", true) || {};
+  var cadence = core.unpack(storage.read("veranode.cadence"));
+  if (typeof cadence === "number" && cadence >= 10000 && cadence <= 45000 && cadence % 1000 === 0) config.recordMs = cadence;
   var intervalMs = typeof config.recordMs === "number" && isFinite(config.recordMs) ?
     Math.max(10000, Math.min(45000, config.recordMs)) : 30000;
   // Aim for 48 hours while bounding the fastest cadence at 8,640 samples.
   // Larger segments amortize flash allocation and index updates.
   var sampleRecords = 64;
-  var sampleLimit = Math.min(Math.ceil(172800000 / intervalMs), 8640);
-  var sampleSegments = Math.ceil(sampleLimit / sampleRecords) + 2;
+  var sampleSegments = sampleSlots(intervalMs);
   // A single inventory is enough: initialization only creates normal metadata
   // files; no StorageFile is appended until the collector starts.
   var files = storage.list(undefined, {sf: true});
@@ -301,6 +305,25 @@ exports.create = function(env, archives) {
     tick();
   }
 
+  function setRecordInterval(ms) {
+    if (disposed || typeof ms !== "number" || ms < 10000 || ms > 45000 || ms % 1000 !== 0)
+      throw new Error("Intervallo non valido");
+    if (ms === intervalMs) return ms;
+    var encoded = core.pack(ms);
+    storage.write("veranode.cadence", encoded);
+    if (storage.read("veranode.cadence") !== encoded) throw new Error("Intervallo non confermato");
+    intervalMs = state.recordIntervalMs = ms;
+    // Keep existing slots addressable when the new cadence needs fewer segments.
+    samples.maxSegments = Math.max(samples.maxSegments, sampleSlots(ms));
+    if (timer !== undefined) {
+      clock.clearInterval(timer);
+      state.nextRecordAt = clock.now() + ms;
+      timer = clock.setInterval(tick, ms);
+    }
+    changed();
+    return ms;
+  }
+
   function quietSensors() {
     if (timer !== undefined) clock.clearInterval(timer);
     timer = undefined;
@@ -375,6 +398,7 @@ exports.create = function(env, archives) {
     env.hrm(false); listeners = [];
   }
   return {state: state, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, setCollection: setCollection, setCollectionMode: setCollectionMode, installPolicy: installPolicy, respond: respond,
+    setRecordInterval: setRecordInterval,
     administration: env.administration || null,
     displaySettings: new core.DisplayPreferences(storage),
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,

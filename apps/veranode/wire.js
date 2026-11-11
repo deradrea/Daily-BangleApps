@@ -128,6 +128,7 @@ exports.create = function(env) {
         if (node.timeHistory) snapshot.buffers.clock = node.timeHistory.stats();
         snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, integrity: "fnv1a32"};
         snapshot.recordIntervalMs = state.recordIntervalMs;
+        snapshot.capabilities.recordIntervalControl = typeof node.setRecordInterval === "function";
         snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true || state.collectionEnabled === false;
         snapshot.capabilities.collectionControl = typeof node.setCollection === "function";
         if (snapshot.capabilities.collectionControl) snapshot.collectionEnabled = state.collectionEnabled;
@@ -147,6 +148,9 @@ exports.create = function(env) {
           catch (_) { snapshot.hardwareError = true; }
         }
         answer(req.id, snapshot);
+      } else if (req.op === "record_interval_set") {
+        if (typeof node.setRecordInterval !== "function") throw new Error("Impostazione intervallo non disponibile");
+        answer(req.id, {recordIntervalMs: node.setRecordInterval(req.intervalMs)});
       } else if (req.op === "collection_set") {
         if (typeof node.setCollection !== "function") throw new Error("Controllo raccolta non disponibile");
         if (req.mode !== undefined) {
