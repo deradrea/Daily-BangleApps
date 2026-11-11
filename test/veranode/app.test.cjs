@@ -331,7 +331,7 @@ test('scrolling menu keeps large labels and memory counts distinct',()=>{
   f.input.touch(1,{x:88,y:89});assert.ok(has('Menu'));
   f.clock.advance(301);f.input.touch(1,{x:88,y:60});assert.ok(has('Attiva'));
   f.clock.advance(301);f.input.touch(1,{x:88,y:155});
-  assert.ok(has('123'));assert.ok(has('Usati 128/2944'));assert.ok(has('Liberi 2816'));
+  assert.ok(has('123'));assert.ok(has('Usati 128/2944'));assert.ok(has('Liberi 2816'));assert.ok(has('Offline ~ 23 h 28 min'));
   f.clock.advance(301);f.input.touch(1,{x:16,y:16});assert.ok(has('Attiva'));
   f.clock.advance(301);f.input.touch(1,{x:16,y:16});assert.ok(has('Menu'));
   assert.deepEqual(f.radio,[]);f.input.remove();

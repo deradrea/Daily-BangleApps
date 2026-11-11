@@ -298,16 +298,29 @@
     });
   }
   function memoryPage(w) {
-    var stats = sampleStats();
+    var stats = sampleStats(), interval = state.recordIntervalMs;
+    var blocked = stats.full || state.paused || !!state.storageError;
+    var color = blocked ? colors.warning : colors.accent;
     pageHeader("Memoria");
-    text(stats.full ? "Memoria piena" : "Da trasferire", w / 2, 34, 18, stats.full ? colors.warning : colors.text, 0);
-    icon("memory",26,73,stats.full ? colors.warning : colors.accent);
-    text(stats.pending, 103, 55, 36, stats.full ? colors.warning : colors.accent, 0);
-    text("Usati " + stats.stored + "/" + stats.capacity, w / 2, 96, 18, colors.text, 0);
-    text("Liberi " + stats.available, w / 2, 115, 18, stats.full ? colors.warning : colors.text, 0);
-    g.setColor(colors.accent).drawRect(8,91,168,94);
-    if(typeof stats.stored === "number" && stats.capacity>0)
-      g.setColor(stats.full?colors.warning:colors.success).fillRect(9,92,9+Math.round(158*Math.min(1,stats.stored/stats.capacity)),93);
+    text(stats.full ? "Memoria piena" : blocked ? "Verifica memoria" : "Da trasferire",
+      w / 2, 34, 14, blocked ? colors.warning : colors.text, 0);
+    icon("memory", 29, 65, color);
+    text(stats.pending, 103, 49, 29, color, 0);
+    g.setColor(colors.text).drawRect(9, 82, 167, 87);
+    if (typeof stats.available === "number" && stats.capacity > stats.available)
+      g.setColor(color).fillRect(10, 83,
+        10 + Math.round(156 * (1 - stats.available / stats.capacity)), 86);
+    text("Usati " + stats.stored + "/" + stats.capacity, 45, 93, 13, colors.text, 0, 82);
+    text("Liberi " + stats.available, 131, 93, 13, color, 0, 82);
+    var remaining = "--";
+    if (typeof stats.available === "number" && interval > 0) {
+      var minutes = Math.floor(stats.available * interval / 60000);
+      remaining = !stats.available ? "0 min" : !minutes ? "< 1 min" :
+        minutes < 60 ? minutes + " min" : Math.floor(minutes / 60) + " h " + (minutes % 60) + " min";
+    }
+    var inactive = state.collectionEnabled === false || state.maintenancePaused || blocked;
+    text(inactive ? "Raccolta sospesa" : "Offline ~ " + remaining,
+      w / 2, 115, 17, inactive ? colors.warning : colors.accent, 0);
     button(8, 137, 168, 174, "Gestisci dati", 18);
   }
   function effectsPage(w) {
