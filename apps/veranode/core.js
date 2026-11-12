@@ -193,7 +193,7 @@ Journal.prototype.ack = function(epoch, sequence) {
   }
   var storage = this.storage, self = this;
   this.segments = this.segments.filter(function(segment) {
-    if (segment.sealed && segment.last > 0 && segment.last <= sequence) {
+    if (segment.last > 0 && segment.last <= sequence) {
       if (self.reader && self.reader.segment === segment) self.reader = null;
       // StorageFile.erase, not Storage.erase: Espruino stores file chunks separately.
       storage.open(segment.name, "r").erase();
@@ -371,28 +371,32 @@ DisplayState.prototype.show = function(mode) {
     }, mode === "alert" ? Math.max(20000, this.timeout) : this.timeout);
   }
 };
-DisplayState.prototype.press = function() {
+DisplayState.prototype.press = function(onSingle) {
   var self = this, now = this.clock.now();
   var doubleWindow = this.mode === "off" ? this.doubleMs : this.doubleOnMs;
   // A recognised gesture consumes the entire burst, until a quiet interval.
   if (now < this.quietUntil) { this.quietUntil = now + doubleWindow; return; }
-  if (this.mode === "pinned") {
+  if (this.mode === "pinned" && !onSingle) {
     if (this.alert) this.returnMode = "off";
+    if (this.click !== null) this.clock.clearTimeout(this.click);
+    this.click = null;
     this.lastPress = null; this.quietUntil = now + doubleWindow; this.show("off"); return;
   }
   if (this.lastPress !== null && now - this.lastPress <= doubleWindow) {
     this.clock.clearTimeout(this.click); this.click = null; this.lastPress = null;
     this.quietUntil = now + doubleWindow;
     if (this.mode === "off") return; // Double press while off is deliberately inert.
+    if (this.mode === "pinned") { this.show("off"); return; }
     if (this.alert) this.returnMode = "pinned";
     this.show("pinned"); return;
   }
   var wasOff = this.mode === "off";
   this.lastPress = now;
-  if (!wasOff) this.show(this.alert ? "alert" : "temporary");
+  if (!wasOff && this.mode !== "pinned") this.show(this.alert ? "alert" : "temporary");
   this.click = this.clock.setTimeout(function() {
     self.lastPress = null; self.click = null;
     if (wasOff && self.mode === "off") self.show(self.alert ? "alert" : "temporary");
+    else if (!wasOff && self.mode !== "off" && !self.alert && onSingle) onSingle();
   }, doubleWindow);
 };
 DisplayState.prototype.presentAlert = function(alert) {

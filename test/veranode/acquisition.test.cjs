@@ -1,9 +1,54 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const core=require('../../apps/veranode/core.js'),runtime=require('../../apps/veranode/runtime.js');
-const {platform}=require('./helpers.cjs'),{Graphics}=require('./graphics.cjs');
+const {platform,policy}=require('./helpers.cjs'),{Graphics}=require('./graphics.cjs');
+
+function offlinePlatform(core) {
+ const fixture=platform(core);
+ fixture.storage.write("veranode.collection",core.pack(true));
+ return fixture;
+}
+
+test('App collects only during an authorized session; BLE loss keeps records until custody ACK',()=>{
+ const f=platform(core),node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionMode,"app");
+ assert.equal(node.health().hrmRequested,false);
+ f.clock.advance(60000);assert.equal(node.samples.pending(),0);
+ assert.throws(()=>node.setAppSession(120),/non disponibile/);
+ node.installPolicy(policy(),true);
+ assert.equal(node.setAppSession(120),true);
+ f.bus.emit("connect");f.bus.emit("disconnect");
+ f.clock.advance(60000);assert.equal(node.samples.pending(),3);
+ const epoch=node.samples.checkpoint.epoch;
+ const rows=node.samples.readBatch(0,4);
+ assert.equal(rows[0].data.collectionMode,"app");
+ node.samples.ack(epoch,rows[rows.length-1].seq);
+ assert.equal(node.samples.pending(),0);
+ f.bus.emit("connect");f.clock.advance(30000);
+ assert.equal(node.samples.pending(),1);
+ node.setAppSession(0);f.clock.advance(60000);
+ assert.equal(node.samples.pending(),1);assert.equal(node.health().hrmRequested,false);
+ node.setCollectionMode("active");f.clock.advance(30000);
+ assert.equal(node.samples.readBatch(4,4)[0].data.collectionMode,"active");
+ node.setCollectionMode("off");const next=node.samples.next;
+ f.clock.advance(60000);assert.equal(node.samples.next,next);
+ node.dispose();
+});
+
+test('initializer probe measures sensors without leaving App samples or keeping the collector running',async()=>{
+ const f=platform(core),node=runtime.create(f.env);node.start();
+ assert.equal(node.probeSensors(),true);
+ f.bus.emit('HRM',{bpm:72,confidence:99});
+ await Promise.resolve();
+ f.clock.advance(90000);
+ assert.equal(node.samples.pending(),0);
+ assert.ok(node.health().tickCount>=2);
+ assert.equal(node.health().heartEvents,1);
+ assert.equal(node.health().scheduled,false);
+ node.dispose();
+});
 
 test('repeated maintenance transitions do not duplicate samples or restart HRM; failed resume stays paused',()=>{
- const f=platform(core),node=runtime.create(f.env);node.start();
+ const f=offlinePlatform(core),node=runtime.create(f.env);node.start();
  node.pauseRecording(true);const high=node.samples.next,power=f.power.length;
  node.pauseRecording(true);assert.equal(f.power.length,power);
  f.env.hrm=on=>{if(on)return false;};
@@ -17,7 +62,7 @@ test('repeated maintenance transitions do not duplicate samples or restart HRM; 
 });
 
 test('disconnect cancels queued BLE notification but offline acquisition continues',async()=>{
- const f=platform(core),node=runtime.create(f.env);node.start();await Promise.resolve();
+ const f=offlinePlatform(core),node=runtime.create(f.env);node.start();await Promise.resolve();
  f.bus.emit('connect');f.bus.emit('HRM',{bpm:72,confidence:99});
  const withNotification=f.clock.timers.size;
  f.bus.emit('disconnect');assert.equal(f.clock.timers.size,withNotification-1);
@@ -27,7 +72,7 @@ test('disconnect cancels queued BLE notification but offline acquisition continu
 });
 
 test('a pressure reply from before maintenance cannot contaminate resumed sensor state',async()=>{
- const f=platform(core),pending=[];f.env.pressure=()=>new Promise(resolve=>pending.push(resolve));
+ const f=offlinePlatform(core),pending=[];f.env.pressure=()=>new Promise(resolve=>pending.push(resolve));
  const node=runtime.create(f.env);node.start();node.pauseRecording(true);
  pending[0]({temperature:99});await Promise.resolve();
  assert.equal(node.health().temperatureReads,0);assert.equal(node.state.values.temperatura,undefined);
@@ -37,7 +82,7 @@ test('a pressure reply from before maintenance cannot contaminate resumed sensor
 });
 
 test('failed HRM startup rolls back flag, listeners and timers, and permits a clean retry',()=>{
- const f=platform(core);let fail=true;
+ const f=offlinePlatform(core);let fail=true;
  f.env.hrm=on=>{if(on&&fail)throw Error('HRM unavailable');f.power.push(on);};
  const node=runtime.create(f.env);
  assert.throws(()=>node.start(),/HRM unavailable/);
@@ -50,7 +95,7 @@ test('failed HRM startup rolls back flag, listeners and timers, and permits a cl
 });
 
 test('actual boot plus actual clock starts sensors and records offline through standby and reconnect',async()=>{
- const f=platform(core),graphics=new Graphics();let input,screen=false;
+ const f=offlinePlatform(core),graphics=new Graphics();let input,screen=false;
  const release=require('../../bin/build-veranode-release.cjs').build();
  const files=Object.fromEntries(release.bundle.files.map(f=>[f.name,Buffer.from(f.base64,'base64').toString()]));
  const modules={};

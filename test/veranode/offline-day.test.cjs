@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const core = require('../../apps/veranode/core.js');
 const runtime = require('../../apps/veranode/runtime.js');
-const {MemoryStorage, platform} = require('./helpers.cjs');
+const {MemoryStorage, platform, policy} = require('./helpers.cjs');
 
 test('startup inventories StorageFiles once and reports real recovery progress without changing rows',()=>{
  const p=platform(core), before=new core.Journal(p.storage,'veranode.s',{maxSegments:8,segmentRecords:32});
@@ -21,6 +21,7 @@ test('startup inventories StorageFiles once and reports real recovery progress w
 test('expanded journal retains legacy full archive and continues its epoch and sequence', () => {
  const p=platform(core), old=new core.Journal(p.storage,'veranode.s',{maxSegments:8,segmentRecords:32});
  for(let i=0;i<256;i++) old.append('sample',i*30000,{scope:'unprovisioned',values:{}});
+ p.storage.write("veranode.collection",core.pack(true));
  const bytes=[...p.storage.files.entries()], epoch=old.checkpoint.epoch;
  const node=runtime.create(p.env);node.start();
  assert.equal(node.samples.stats().capacity,2944);
@@ -46,6 +47,7 @@ test('a smaller requested quota discovers existing high numbered segments withou
 
 for(const recordMs of [10000,30000,45000]) test('24h offline cadence '+recordMs+' preserves every sample and survives reboot',async()=>{
  const p=platform(core);p.clock.time=Date.UTC(2026,9,16);
+ p.storage.write('veranode.collection',core.pack(true));
  p.storage.write('veranode.config.json',JSON.stringify({recordMs}));
  let node=runtime.create(p.env);node.start();await Promise.resolve();
  const count=Math.ceil(86400000/recordMs);
@@ -70,7 +72,8 @@ for(const recordMs of [10000,30000,45000]) test('24h offline cadence '+recordMs+
 
 
 test('explicit preparation pause preserves journals and management listeners, then resumes',()=>{
- const f=platform(core),node=runtime.create(f.env);let changes=0;
+ const f=platform(core);f.storage.write("veranode.collection",core.pack(true));
+ const node=runtime.create(f.env);let changes=0;
  node.onChange(()=>changes++);node.start();
  const high=node.samples.next, epoch=node.samples.checkpoint.epoch;
  node.pauseRecording(true);const afterPause=changes;
@@ -80,4 +83,53 @@ test('explicit preparation pause preserves journals and management listeners, th
  node.changed();assert.ok(changes>afterPause);
  node.pauseRecording(false);assert.equal(node.state.maintenancePaused,false);
  assert.ok(node.samples.next>high);assert.equal(f.power.at(-1),true);node.dispose();
+});
+
+test('collection preference survives reboot and maintenance without touching pending samples', () => {
+ const f=platform(core);
+ let node=runtime.create(f.env);node.start();
+ const high=node.samples.next,epoch=node.samples.checkpoint.epoch;
+ node.setCollection(false);node.pauseRecording(true);node.pauseRecording(false);
+ f.clock.advance(90000);
+ assert.equal(node.samples.next,high);assert.equal(f.power.at(-1),false);
+ node.dispose();node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionEnabled,false);
+ assert.equal(node.samples.next,high);assert.equal(node.samples.checkpoint.epoch,epoch);
+ node.setCollection(true);
+ assert.equal(f.power.at(-1),true);assert.equal(node.samples.next,high+1);
+ node.dispose();
+});
+
+test('three collection modes preserve old preferences and the App session survives a link loss but not a reboot', () => {
+ const f=platform(core);
+ f.storage.write('veranode.collection',core.pack(false));
+ let node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionMode,'off');
+ assert.equal(node.samples.pending(),0);
+ assert.equal(node.setCollectionMode('app'),'app');
+ node.installPolicy(policy(),true);node.setAppSession(120);
+ f.bus.emit('disconnect');f.clock.advance(30000);
+ f.bus.emit('connect');f.clock.advance(30000);
+ assert.equal(node.samples.pending(),3);
+ node.dispose();node=runtime.create(f.env);node.start();
+ assert.equal(node.state.collectionMode,'app');
+ assert.equal(node.samples.pending(),3);
+ assert.equal(node.setCollectionMode('active'),'active');
+ assert.equal(node.samples.pending(),4);
+ node.setCollection(false);
+ assert.equal(node.state.collectionMode,'off');
+ assert.equal(node.samples.pending(),4);
+ node.dispose();
+});
+
+test('an unconfigured watch defaults to App while a saved legacy active choice stays active', () => {
+ const f=platform(core);
+ let node=runtime.create(f.env);
+ assert.equal(node.state.collectionMode,'app');
+ assert.equal(node.state.collectionEnabled,true);
+ node.dispose();
+ f.storage.write('veranode.collection',core.pack(true));
+ node=runtime.create(f.env);
+ assert.equal(node.state.collectionMode,'active');
+ node.dispose();
 });

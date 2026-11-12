@@ -4,6 +4,12 @@ const core = require('../../apps/veranode/core.js');
 const runtime = require('../../apps/veranode/runtime.js');
 const {MemoryStorage, Clock, platform, policy} = require('./helpers.cjs');
 
+function offlinePlatform(core) {
+  const fixture = platform(core);
+  fixture.storage.write('veranode.collection', core.pack(true));
+  return fixture;
+}
+
 test('sequential transfer reads each record once, preserves bytes and supports retry and reboot', () => {
   const store = new MemoryStorage(), journal = new core.Journal(store, 's');
   for (let i=0;i<256;i++) journal.append('sample',i,{value:72});
@@ -185,7 +191,7 @@ test('live BLE stays compatible; stale heart clears and temperature is not fabri
   assert.deepEqual(core.frames({battito: {value: 72, at: 1000}}, 47000), {'2a37': [0,0]});
 });
 test('online acquisition continues after disconnect and stores offline data', async () => {
-  const p = platform(core), node = runtime.create(p.env); node.start();
+  const p = offlinePlatform(core), node = runtime.create(p.env); node.start();
   await Promise.resolve();
   p.bus.emit('HRM', {bpm: 72, confidence: 90});
   p.bus.emit('connect'); assert.ok(p.sent.length);
@@ -197,7 +203,7 @@ test('online acquisition continues after disconnect and stores offline data', as
   node.dispose(); assert.equal(p.power.at(-1), false);
 });
 test('offline local alert responds durably only to the current touch target', () => {
-  const p = platform(core), node = runtime.create(p.env); node.start();
+  const p = offlinePlatform(core), node = runtime.create(p.env); node.start();
   assert.throws(() => node.installPolicy(policy(), false));
   node.installPolicy(policy(), true);
   [110,111,112].forEach(bpm => { p.bus.emit('HRM', {bpm, confidence: 90}); p.clock.advance(1000); });
@@ -208,14 +214,14 @@ test('offline local alert responds durably only to the current touch target', ()
   assert.equal(node.events.readBatch(0).at(-1).kind, 'response'); node.dispose();
 });
 test('storage full is explicit while acquisition and rule evaluation remain alive', () => {
-  const p = platform(core), node = runtime.create(p.env); node.start();
+  const p = offlinePlatform(core), node = runtime.create(p.env); node.start();
   p.storage.getFree = () => 100;
   p.clock.advance(30000);
   assert.equal(node.state.paused, true); assert.equal(node.state.storageError, 'Spazio insufficiente');
   assert.equal(node.state.running, true); node.dispose();
 });
 test('pending alerts and active rules survive reboot without reopening the same condition', () => {
-  const p = platform(core); let node = runtime.create(p.env); node.start();
+  const p = offlinePlatform(core); let node = runtime.create(p.env); node.start();
   node.installPolicy(policy(), true);
   [110,111,112].forEach(bpm => { p.bus.emit('HRM', {bpm, confidence: 90}); p.clock.advance(1000); });
   const id = node.state.queue[0].id, buzzes = p.buzz.length;
@@ -228,7 +234,7 @@ test('pending alerts and active rules survive reboot without reopening the same 
   assert.equal(node.state.queue.length, 0); node.dispose();
 });
 test('a torn latest alert checkpoint is recovered from the durable event journal', () => {
-  const p = platform(core); let node = runtime.create(p.env); node.start();
+  const p = offlinePlatform(core); let node = runtime.create(p.env); node.start();
   node.installPolicy(policy(), true);
   [110,111,112].forEach(bpm => { p.bus.emit('HRM', {bpm, confidence: 90}); p.clock.advance(1000); });
   const id = node.state.queue[0].id;
@@ -237,7 +243,7 @@ test('a torn latest alert checkpoint is recovered from the durable event journal
   assert.equal(node.state.queue[0].id, id); node.dispose();
 });
 test('reserved IDs, another user, expired and older profiles cannot be silently installed', () => {
-  const p = platform(core), node = runtime.create(p.env), data = policy();
+  const p = offlinePlatform(core), node = runtime.create(p.env), data = policy();
   data.rules[0].id = '__proto__'; assert.throws(() => core.validatePolicy(data, data.mac));
   node.installPolicy(policy(), true); assert.throws(() => node.installPolicy(policy(), true));
   const other = policy(); other.revision = 2; other.user = '22222222-2222-4222-8222-222222222222';
@@ -247,7 +253,7 @@ test('reserved IDs, another user, expired and older profiles cannot be silently 
 });
 
 test('configuration expiry never stops offline sampling or renews the stored approval',()=>{
- const p=platform(core),node=runtime.create(p.env),data=policy();data.expiresAt=p.clock.now()+1000;
+ const p=offlinePlatform(core),node=runtime.create(p.env),data=policy();data.expiresAt=p.clock.now()+1000;
  node.installPolicy(data,true);node.start();const before=node.samples.next;
  p.clock.advance(65000);assert.equal(node.state.policyStale,true);
  assert.equal(node.state.running,true);assert.ok(node.samples.next>=before+2);
@@ -258,14 +264,14 @@ test('configuration expiry never stops offline sampling or renews the stored app
  assert.ok(restarted.samples.next>before+2);restarted.dispose();
 });
 test('storage failure cannot silence a detected condition or fake its persisted response', () => {
-  const p = platform(core), node = runtime.create(p.env); node.start(); node.installPolicy(policy(), true);
+  const p = offlinePlatform(core), node = runtime.create(p.env); node.start(); node.installPolicy(policy(), true);
   p.storage.fail = true;
   [110,111,112].forEach(bpm => { p.bus.emit('HRM', {bpm, confidence: 90}); p.clock.advance(1000); });
   assert.equal(node.state.queue.length, 1); assert.equal(node.state.queue[0].persisted, false);
   assert.equal(node.state.queue[0].persisted, false); assert.equal(node.respond(node.state.queue[0].id), false); node.dispose();
 });
 test('a missing temperature sensor and corrupt interval cannot stop heart acquisition', () => {
-  const p = platform(core);
+  const p = offlinePlatform(core);
   p.storage.write('veranode.config.json', JSON.stringify({recordMs: 'invalid'}));
   p.env.pressure = () => { throw Error('missing barometer'); };
   p.env.accel = () => { throw Error('missing accel'); };
@@ -276,7 +282,7 @@ test('a missing temperature sensor and corrupt interval cannot stop heart acquis
   node.dispose(); assert.equal(p.clock.timers.size, 0);
 });
 test('a new rule revision does not inherit the old active condition after reboot', () => {
-  const p = platform(core); let node = runtime.create(p.env); node.start(); node.installPolicy(policy(), true);
+  const p = offlinePlatform(core); let node = runtime.create(p.env); node.start(); node.installPolicy(policy(), true);
   [110,111,112].forEach(bpm => { p.bus.emit('HRM', {bpm, confidence: 90}); p.clock.advance(1000); });
   const updated = policy(); updated.revision = 2; node.installPolicy(updated, true);
   node.dispose(); node = runtime.create(p.env); node.start();
@@ -324,8 +330,11 @@ test('append capacity accounts for partial acknowledgements, sealed segments and
  const before=[...storage.files.entries()];
  assert.deepEqual(journal.stats(),{capacity:8,stored:3,pending:3,available:5,full:false});
  assert.deepEqual([...storage.files.entries()],before);
+ journal.ack(journal.checkpoint.epoch,2);
+ assert.deepEqual(journal.stats(),{capacity:8,stored:3,pending:1,available:5,full:false});
+ assert.deepEqual(journal.readBatch(0,4).map(row=>row.seq),[3]);
  journal.ack(journal.checkpoint.epoch,3);
- assert.deepEqual(journal.stats(),{capacity:8,stored:3,pending:0,available:5,full:false});
+ assert.deepEqual(journal.stats(),{capacity:8,stored:0,pending:0,available:8,full:false});
  journal.append('sample',4,{});journal.ack(journal.checkpoint.epoch,4);
  assert.deepEqual(journal.stats(),{capacity:8,stored:0,pending:0,available:8,full:false});
  const reboot=new core.Journal(storage,'s',{maxSegments:2,segmentRecords:4});

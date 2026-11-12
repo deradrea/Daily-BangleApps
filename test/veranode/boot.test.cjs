@@ -5,8 +5,14 @@ const vm = require('node:vm');
 const core = require('../../apps/veranode/core.js');
 const runtime = require('../../apps/veranode/runtime.js');
 const {platform} = require('./helpers.cjs');
+function offlinePlatform(core) {
+  const fixture = platform(core);
+  fixture.storage.write('veranode.collection', core.pack(true));
+  return fixture;
+}
+
 test('system boot keeps Vera GATT services and starts sensors only after service registration', () => {
-  const f = platform(core), setServices = [], updated = [], display = [];
+  const f = offlinePlatform(core), setServices = [], updated = [], display = [];
   const graphics = new (require('./graphics.cjs').Graphics)();
   const context = {global: {}, bleServices: {'abcd': {}}, bleServiceOptions: {uart: false},
     g: graphics,
@@ -46,7 +52,7 @@ test('startup shows a failure state instead of an indefinite loading message',()
 });
 
 test('a graphics failure cannot prevent acquisition startup',()=>{
- const f=platform(core),graphics=new(require('./graphics.cjs').Graphics)();
+ const f=offlinePlatform(core),graphics=new(require('./graphics.cjs').Graphics)();
  graphics.fillCircle=()=>{throw Error('Display unavailable');};
  const context={global:{},Date,g:graphics,bleServices:{},bleServiceOptions:{},
   setTimeout:f.clock.setTimeout,clearTimeout:f.clock.clearTimeout,

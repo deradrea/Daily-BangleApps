@@ -44,6 +44,34 @@ test('authorized configuration readback identifies the installed context without
  f.server.dispose();f.node.dispose();
 });
 
+test('collection changes require owner consent and leave the archive intact', () => {
+  const f = setup(), data = policy();
+  f.node.start();
+  f.command({id:'blocked', op:'collection_set', enabled:false});
+  assert.equal(f.responses()[0].ok,false);
+  f.command({id:'owner',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});
+  f.server.decide(true);f.responses();
+  const before = f.node.samples.next;
+  f.command({id:'off',op:'collection_set',enabled:false});
+  assert.equal(f.responses()[0].result.collectionEnabled,false);
+  f.command({id:'status',op:'status'});
+  const status = f.responses()[0].result;
+  assert.equal(status.capabilities.collectionControl,true);
+  assert.equal(status.collectionEnabled,false);
+  assert.equal(status.live,false);
+  assert.equal(f.node.samples.next,before);
+  f.command({id:'invalid-mode',op:'collection_set',mode:'auto'});
+  assert.equal(f.responses()[0].ok,false);
+  f.command({id:'app-mode',op:'collection_set',mode:'app'});
+  assert.equal(f.responses()[0].result.collectionMode,'app');
+  f.command({id:'mode-status',op:'status'});
+  const appStatus=f.responses()[0].result;
+  assert.equal(appStatus.capabilities.collectionModes,true);
+  assert.equal(appStatus.collectionMode,'app');
+  assert.equal(appStatus.collectionEnabled,true);
+  f.server.dispose();f.node.dispose();
+});
+
 test('a visible unanswered consent expires at 60 seconds and a late Yes cannot authorize', () => {
   const f=setup(), data=policy();
   f.command({id:'timed-auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});
@@ -254,4 +282,33 @@ test('display-only consent has a timer expiry independent of wall-clock changes'
  const f=setup(),data=policy();f.command({id:'short-session',op:'authorize_display',mac:data.mac});f.server.decide(true);f.responses();
  f.p.clock.advance(300001);f.command({id:'expired-display',op:'settings_get'});assert.equal(f.responses()[0].ok,false);
  f.server.dispose();f.node.dispose();assert.equal(f.p.clock.timers.size,0);
+});
+
+test('collection reconnect accepts only the key approved on watch and does not grant maintenance', () => {
+  const f = setup(), data = policy(), relayKey = '12345678-1234-4123-8123-123456789abc';
+  f.node.installPolicy(data, true);
+  f.node.start();
+  f.command({id:'auth-relay', op:'authorize', user:data.user, scope:data.scope, mac:data.mac, relayKey});
+  f.server.decide(true);
+  assert.equal(f.responses()[0].result.authorized,true);
+  f.command({id:'start-relay',op:'collection_session',seconds:120});
+  assert.equal(f.responses()[0].result.active,true);
+  f.server.reset();
+  f.command({id:'wrong-relay',op:'collection_resume',mac:data.mac,relayKey:'wrong'});
+  assert.equal(f.responses()[0].result.authorized,false);
+  f.secure(false);
+  f.command({id:'clear-relay',op:'collection_resume',mac:data.mac,relayKey});
+  assert.equal(f.responses()[0].ok,false);
+  f.secure(true);
+  f.command({id:'right-relay',op:'collection_resume',mac:data.mac,relayKey});
+  assert.equal(f.responses()[0].result.authorized,true);
+  assert.equal(f.consent(),null);
+  f.command({id:'no-settings',op:'settings_get'});
+  assert.equal(f.responses()[0].ok,false);
+  f.command({id:'stop-relay',op:'collection_session',seconds:0});
+  assert.equal(f.responses()[0].result.active,false);
+  f.server.reset();
+  f.command({id:'stopped-relay',op:'collection_resume',mac:data.mac,relayKey});
+  assert.equal(f.responses()[0].result.authorized,false);
+  f.server.dispose();f.node.dispose();
 });

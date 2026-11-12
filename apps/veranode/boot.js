@@ -59,6 +59,7 @@
       notify: true, readable: true};
   });
   services[wire.service] = {};
+  services[wire.service]["d4a10003-7b2c-4c61-9e3a-5f42616e676c"] = {value: [1], readable: true};
   services[wire.service][wire.request] = {writable: true, maxLen: 20,
     security: {write: {encrypted: true}}, onWrite: function(event) { if (server) server.receive(new Uint8Array(event.data)); }};
   services[wire.service][wire.response] = {value: [], maxLen: 180, notify: true,

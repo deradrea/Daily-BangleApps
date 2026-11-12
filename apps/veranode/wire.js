@@ -54,6 +54,7 @@ exports.create = function(env) {
     if (consentTimer) env.clock.clearTimeout(consentTimer);
     consentTimer = undefined; pending = null; env.consent(null);
   }
+  var relayGrant;
   function decide(approved) {
     if (!pending) return false;
     diagnostics.decisions++;
@@ -63,7 +64,10 @@ exports.create = function(env) {
         clearDisplay();displaySession={active:true};
         displayTimer=env.clock.setTimeout(clearDisplay,300000);
       }
-      else owner = {user: req.user, scope: req.scope};
+      else {
+        owner = {user: req.user, scope: req.scope, relay: !!req.relayKey};
+        if (req.relayKey) relayGrant = {key:req.relayKey, user:req.user, scope:req.scope};
+      }
     }
     env.node.state.peerName = (owner || displaySession) && typeof req.peerName === "string" ? req.peerName : null;
     if (env.node.changed) env.node.changed();
@@ -87,7 +91,21 @@ exports.create = function(env) {
       env.consent({id:req.id,purpose:"display",decide:decide});
       consentTimer=env.clock.setTimeout(function(){decide(false);},60000);return;
     }
+    if (req.op === "collection_resume") {
+      var policy = env.node.state.policy;
+      if (pending || owner || displaySession || !relayGrant || relayGrant.key !== req.relayKey ||
+          !policy || policy.user !== relayGrant.user || policy.scope !== relayGrant.scope ||
+          req.mac !== env.mac || !env.node.appSessionActive()) {
+        answer(req.id, {authorized:false}); return;
+      }
+      owner = {user:relayGrant.user, scope:relayGrant.scope, relay:true};
+      answer(req.id,{authorized:true}); return;
+    }
     if (req.op === "authorize") {
+      if (req.relayKey !== undefined && (typeof req.relayKey !== "string" ||
+          req.relayKey.length !== 36 || !/^[a-f0-9-]+$/.test(req.relayKey))) {
+        answer(req.id,null,"Chiave sessione non valida");return;
+      }
       if (pending) { answer(req.id, null, "Conferma gia in corso"); return; }
       if (typeof req.user !== "string" || req.user.length !== 36 || !/^[0-9a-f-]+$/i.test(req.user) ||
           typeof req.scope !== "string" || !req.scope || req.scope.length > 120 || req.mac !== env.mac) {
@@ -109,6 +127,9 @@ exports.create = function(env) {
     if (req.op === "revoke") { owner = null; clearDisplay(); clearConsent(); answer(req.id, {revoked: true}); return; }
     if(!owner && displaySession && req.op!=="settings_get" && req.op!=="settings_set") {answer(req.id,null,"Sessione limitata al display");return;}
     if (!owner && !displaySession) { answer(req.id, null, "Conferma sul Bangle richiesta"); return; }
+    if (owner && owner.relay && !["status","clock","batch","ack","collection_state","collection_session"].includes(req.op)) {
+      answer(req.id,null,"Sessione limitata alla raccolta");return;
+    }
     try {
       var node = env.node, state = node.state;
       if (req.op === "status") {
@@ -117,7 +138,7 @@ exports.create = function(env) {
           sampleAck: node.samples.checkpoint.ack, sampleDiscardedThrough: node.samples.checkpoint.discardedThrough || 0,
           sampleAdministrativePending: !!node.samples.eraseLock, eventEpoch: node.events.checkpoint.epoch,
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
-          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
+          live: state.running && state.collectionEnabled !== false, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
         if (node.timeHistory) {
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
@@ -128,7 +149,12 @@ exports.create = function(env) {
         if (node.timeHistory) snapshot.buffers.clock = node.timeHistory.stats();
         snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, integrity: "fnv1a32"};
         snapshot.recordIntervalMs = state.recordIntervalMs;
-        snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true;
+        snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true || state.collectionEnabled === false;
+        snapshot.capabilities.collectionControl = typeof node.setCollection === "function";
+        if (snapshot.capabilities.collectionControl) snapshot.collectionEnabled = state.collectionEnabled;
+        snapshot.capabilities.collectionModes = typeof node.setCollectionMode === "function";
+        if (snapshot.capabilities.collectionModes) snapshot.collectionMode = state.collectionMode;
+        if (node.appSessionActive) snapshot.appSessionActive = node.appSessionActive();
         snapshot.preparationPaused = state.maintenancePaused === true;
         snapshot.storageError = state.storageError;
         if (node.health) snapshot.acquisitionHealth = node.health();
@@ -143,6 +169,21 @@ exports.create = function(env) {
           catch (_) { snapshot.hardwareError = true; }
         }
         answer(req.id, snapshot);
+      } else if (req.op === "collection_state") {
+        answer(req.id, {mode: state.collectionMode, active: node.appSessionActive(), pending: node.samples.pending()});
+      } else if (req.op === "collection_session") {
+        if (req.seconds !== 0 && (!state.policy || state.policy.user !== owner.user || state.policy.scope !== owner.scope))
+          throw new Error("Configurazione orologio non associata alla sessione");
+        var active = node.setAppSession(req.seconds);
+        if (req.seconds === 0) relayGrant = null;
+        answer(req.id, {active: active});
+      } else if (req.op === "collection_set") {
+        if (typeof node.setCollection !== "function") throw new Error("Controllo raccolta non disponibile");
+        if (req.mode !== undefined) {
+          if (req.enabled !== undefined || typeof node.setCollectionMode !== "function")
+            throw new Error("Modalita raccolta non disponibile");
+          answer(req.id, {collectionMode: node.setCollectionMode(req.mode), collectionEnabled: state.collectionEnabled});
+        } else answer(req.id, {collectionEnabled: node.setCollection(req.enabled)});
       } else if (req.op === "settings_get" || req.op === "settings_set") {
         if(!node.displaySettings)throw new Error("Preferenze display non disponibili");
         answer(req.id,req.op==="settings_get"?node.displaySettings.read():node.displaySettings.set(req));
