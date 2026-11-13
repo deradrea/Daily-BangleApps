@@ -33,6 +33,19 @@ test('failed audit prevents time change; failed application remains uncertain',(
   assert.throws(()=>f.tracker.sync(req));assert.equal(f.tracker.status().quality,'unverified');
   assert.equal(f.history.readBatch(0,16).at(-1).data.type,'sync_intent');
 });
+test('Vera server sync records provenance for future samples and expires',()=>{
+  const f=setup(), req={...request(f),source:'vera_server'};
+  f.samples.append('sample',f.clock.now(),{});
+  const original=f.storage.files.get('s0');
+  assert.equal(f.tracker.sync(req).quality,'vera_server');
+  const anchor=f.history.readBatch(0,16).at(-1).data;
+  assert.equal(anchor.source,'vera_server');
+  assert.equal(anchor.fromSequence,2);
+  assert.equal(f.storage.files.get('s0'),original);
+  assert.throws(()=>f.tracker.sync({...req,source:'phone_auto'}),/conflitto/);
+  f.clock.time+=86400001;
+  assert.equal(f.tracker.status().quality,'stale');
+});
 test('reboot, stale references and time jumps cannot silently retain verified status',()=>{
   const f=setup();f.tracker.sync(request(f));f.clock.time+=86400001;
   assert.equal(f.tracker.status().quality,'stale');

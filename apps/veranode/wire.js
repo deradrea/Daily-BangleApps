@@ -140,6 +140,7 @@ exports.create = function(env) {
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
           live: state.running && state.collectionEnabled !== false, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
         if (node.timeHistory) {
+          snapshot.capabilities.clockServerSync = true;
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
           snapshot.timeEpoch = node.timeHistory.checkpoint.epoch;
