@@ -132,8 +132,8 @@ exports.create=function(e){
   function confirm(binding){
     bound();if(!same(binding,state.binding)||!['activation-pending','complete'].includes(state.phase))fail('Esito di un altra esecuzione');
     var receipt=e.bootReceipt();if(receipt.generation!==state.binding.generation||receipt.executionId!==state.binding.executionId)fail('Riavvio ufficiale non ancora verificato');
-    var h=e.health();if(e.settings().clock!=='veranode.app.js'||!h||h.running!==true||h.scheduled!==true||h.hrmRequested!==true)fail('Vera o raccolta non avviati');
-    verify();if(state.phase!=='complete'){state.phase='complete';save();}e.cleanup();paint();return {softwareReady:true,clockVerified:false,sensorSamplesVerified:false,collectionRunning:true,binding:state.binding,clockUtcMs:e.clockUtcMs(),runtimePackageSha256:e.target.runtimePackageSha256,health:h};
+    var h=e.health();if(e.settings().clock!=='veranode.app.js'||!h||h.running!==true||(h.appIdle!==true&&(h.scheduled!==true||h.hrmRequested!==true)))fail('Vera o raccolta non avviati');
+    verify();if(state.phase!=='complete'){state.phase='complete';save();}e.cleanup();paint();return {softwareReady:true,clockVerified:false,sensorSamplesVerified:false,collectionRunning:h.appIdle!==true,collectionReady:true,binding:state.binding,clockUtcMs:e.clockUtcMs(),runtimePackageSha256:e.target.runtimePackageSha256,health:h};
   }
   function inventoryPage(offset,limit){bound();if(!integer(offset)||!integer(limit)||offset<0||limit<1||limit>24)fail('Pagina non valida');var rows=e.inventory();return {offset:offset,total:rows.length,next:Math.min(rows.length,offset+limit),files:rows.slice(offset,offset+limit)};}
   var api={protocol:1,status:status,inspect:inspect,requestSecurity:e.requestSecurity,securityStatus:e.securityStatus,setConsent:function(on){consent=on===true;e.consentChanged(consent);paint();},prepare:prepare,recover:recover,stagingProgress:stagingProgress,stage:stage,beginWipe:beginWipe,step:step,verify:verify,syncTime:syncTime,activate:activate,confirm:confirm,inventoryPage:inventoryPage};

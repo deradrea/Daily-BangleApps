@@ -28,7 +28,7 @@ exports.create = function(env) {
     policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
     collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
-  var appUntil = 0, probeUntil = 0;
+  var appUntil = 0, probeUntil = 0, appScope;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
   function rebaseTime(delta) {
@@ -160,7 +160,7 @@ exports.create = function(env) {
     try {
       if (storage.getFree && storage.getFree() < 8192) { state.paused = true; state.storageError = "Spazio insufficiente"; }
       else {
-        var row = samples.append("sample", now, {scope: state.policy ? state.policy.scope : "unprovisioned",
+        var row = samples.append("sample", now, {scope: state.collectionMode === "app" ? appScope : state.policy ? state.policy.scope : "unprovisioned",
           revision: state.policy ? state.policy.revision : null, collectionMode: state.collectionMode, values: values});
         state.paused = !row;
         if (!row) state.storageError = "Memoria campioni piena";
@@ -278,6 +278,7 @@ exports.create = function(env) {
   }
   function health() {
     return {schemaVersion: 1, running: state.running, scheduled: timer !== undefined,
+      appIdle: state.collectionMode === "app" && appUntil <= clock.now() && probeUntil <= clock.now(),
       hrmRequested: sensorHealth.hrmRequested, maintenancePaused: state.maintenancePaused === true,
       recordingBlocked: state.paused === true || !collecting(),
       tickCount: sensorHealth.tickCount, heartEvents: sensorHealth.heartEvents,
@@ -319,6 +320,7 @@ exports.create = function(env) {
       throw e;
     }
     appUntil = probeUntil = 0;
+    appScope = undefined;
     state.collectionMode = mode; state.collectionEnabled = enabled;
     if (mode !== "active") {
       state.values = {};
@@ -367,15 +369,17 @@ exports.create = function(env) {
     scheduleCollection();
     return true;
   }
-  function setAppSession(seconds) {
+  function setAppSession(seconds, scope) {
     if (state.collectionMode !== "app") return false;
     probeUntil = 0;
-    if (seconds === 0) { appUntil = 0; quietSensors(); changed(); return false; }
-    if (!state.running || state.maintenancePaused || !state.policy ||
+    if (seconds === 0) { appUntil = 0; appScope = undefined; quietSensors(); changed(); return false; }
+    scope = scope || (state.policy && state.policy.scope);
+    if (!state.running || state.maintenancePaused || !scope ||
         typeof seconds !== "number" || seconds < 1 || seconds > 86400 || Math.floor(seconds) !== seconds)
       throw new Error("Sessione App non disponibile");
     var resume = timer === undefined;
     if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+    appScope = scope;
     appUntil = clock.now() + seconds * 1000;
     if (resume) { sensorHealth.hrmRequested = true; scheduleCollection(); changed(); }
     return true;

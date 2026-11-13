@@ -94,7 +94,7 @@ exports.create = function(env) {
     if (req.op === "collection_resume") {
       var policy = env.node.state.policy;
       if (pending || owner || displaySession || !relayGrant || relayGrant.key !== req.relayKey ||
-          !policy || policy.user !== relayGrant.user || policy.scope !== relayGrant.scope ||
+          (policy && (policy.user !== relayGrant.user || policy.scope !== relayGrant.scope)) ||
           req.mac !== env.mac || !env.node.appSessionActive()) {
         answer(req.id, {authorized:false}); return;
       }
@@ -172,9 +172,9 @@ exports.create = function(env) {
       } else if (req.op === "collection_state") {
         answer(req.id, {mode: state.collectionMode, active: node.appSessionActive(), pending: node.samples.pending()});
       } else if (req.op === "collection_session") {
-        if (req.seconds !== 0 && (!state.policy || state.policy.user !== owner.user || state.policy.scope !== owner.scope))
+        if (req.seconds !== 0 && state.policy && (state.policy.user !== owner.user || state.policy.scope !== owner.scope))
           throw new Error("Configurazione orologio non associata alla sessione");
-        var active = node.setAppSession(req.seconds);
+        var active = node.setAppSession(req.seconds, owner.scope);
         if (req.seconds === 0) relayGrant = null;
         answer(req.id, {active: active});
       } else if (req.op === "collection_set") {
