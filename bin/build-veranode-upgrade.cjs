@@ -13,7 +13,7 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  if(!sameBuilder && !options.sourceCommit)throw Error('Commit the upgrade builder before producing an official artifact');
  if(options.sourceCommit && !sameBuilder){
   const Module=require('node:module'),previous=new Module(__filename,module);previous.filename=__filename;previous.paths=module.paths;previous._compile(historical.toString(),__filename);
-  return previous.exports.build(output,{sourceCommit});
+  return previous.exports.build(output,{...options,sourceCommit});
  }
  function committed(relative){const bytes=cp.execFileSync('git',['show',sourceCommit+':'+relative],{cwd:root});inputs[relative]=hash(bytes);return bytes;}
  const packages=sources.map(([name,expected])=>{const raw=committed(name);if(hash(raw)!==expected)throw Error('Source package changed');const p=JSON.parse(raw);for(const f of p.files){const b=Buffer.from(f.base64,'base64');if(b.length!==f.size||hash(b)!==f.sha256)throw Error('File changed');}return {packageSha256:expected,revision:p.revision,files:p.files};});
@@ -24,6 +24,9 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  if(!fs.readFileSync(path.join(root,'bin/veranode-runtime-selection.cjs')).equals(selectionSource))throw Error('Runtime selector differs from canonical source');
  const target=require('./veranode-runtime-selection.cjs').select(committed),rows=files=>files.map(({name,size,sha256})=>({name,size,sha256}));
  if(!packages.some(p=>p.packageSha256===target.packageSha256))packages.push(target);
+ const allowedSources=options.sourceRuntime===undefined
+   ? packages : packages.filter(p=>p.revision===options.sourceRuntime && p.revision!==target.revision);
+ if(!allowedSources.length)throw Error('Pilot source runtime is not recognized');
  const bootupdate=committed('apps/boot/bootupdate.js'),bootloader=committed('apps/boot/bootloader.js');
  const crlf=bytes=>Buffer.from(bytes.toString('utf8').replace(/\r?\n/g,'\r\n'));
  const variants=bytes=>[...new Set([hash(bytes),hash(crlf(bytes))])];
@@ -32,7 +35,7 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
   authorization:{mode:'app-confirmed',physicalConsent:false,confirmUpdate:true,pinRequired:true},
   sourceRepository:'https://github.com/deradrea/Daily-BangleApps',
   target:{revision:target.revision,packageSha256:target.packageSha256,files:target.files},
-  sources:packages.map(p=>({revision:p.revision,packageSha256:p.packageSha256,files:rows(p.files),journalCompatibility:'veranode-journal-crc16/1'})),
+  sources:allowedSources.map(p=>({revision:p.revision,packageSha256:p.packageSha256,files:rows(p.files),journalCompatibility:'veranode-journal-crc16/1'})),
   maintenance:{protocol:1,files:sidecar,bootloader:{cache:'bangle-boot0-v1',
    bootupdateSha256:hash(crlf(bootupdate)),bootloaderSha256:hash(crlf(bootloader))},
    acceptedBootloaderSha256:variants(bootloader),acceptedBootupdateSha256:variants(bootupdate),
@@ -49,5 +52,9 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  if(fs.existsSync(dfile)){if(fs.readFileSync(dfile,'utf8')!==dbytes)throw Error('Immutable descriptor conflict');}else fs.writeFileSync(dfile,dbytes,{flag:'wx'});
  return {revision,sha256,size:payload.length,path:file,descriptor,plan};
 }
-if(require.main===module){const r=build();console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
+if(require.main===module){
+ const sourceRuntime=process.argv[2];
+ const r=build(undefined,{sourceRuntime});
+ console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));
+}
 module.exports={build};
