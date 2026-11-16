@@ -30,7 +30,7 @@ exports.create = function(env) {
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
   var appUntil = 0, probeUntil = 0, appScope;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
-  var engine, disposed = false, lastNotify = 0, notifyTimer;
+  var engine, disposed = false, lastNotify = 0, notifyTimer, clockObserver;
   function rebaseTime(delta) {
     state.values = {};
     if (appUntil) appUntil += delta;
@@ -262,6 +262,9 @@ exports.create = function(env) {
       sensorHealth.hrmRequested = acquiring;
       state.running = true;
       if (acquiring) scheduleCollection();
+      // App idle mode stops the sensor timer, but time continuity still needs
+      // a reading before the clock journal's five-minute gap limit.
+      if (timeTracker) clockObserver = clock.setInterval(observeTime, 240000);
       changed();
       if (env.progress) env.progress("Pronto", 1, 1);
     } catch (e) {
@@ -269,6 +272,8 @@ exports.create = function(env) {
       sensorHealth.startError = String(e).slice(0, 120);
       if (timer !== undefined) clock.clearInterval(timer);
       timer = undefined;
+      if (clockObserver !== undefined) clock.clearInterval(clockObserver);
+      clockObserver = undefined;
       if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
       pressureGeneration++; pendingPressure = false;
       env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
@@ -388,6 +393,8 @@ exports.create = function(env) {
     disposed = true; state.running = false; sensorHealth.hrmRequested = false;
     if (timer !== undefined) clock.clearInterval(timer);
     timer = undefined;
+    if (clockObserver !== undefined) clock.clearInterval(clockObserver);
+    clockObserver = undefined;
     if (notifyTimer) clock.clearTimeout(notifyTimer);
     if (pressureTimer) clock.clearTimeout(pressureTimer);
     env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);

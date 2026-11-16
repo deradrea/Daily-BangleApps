@@ -54,6 +54,27 @@ test('reboot, stale references and time jumps cannot silently retain verified st
   const reboot=setup(f.storage);assert.equal(reboot.tracker.status().quality,'unverified');
   assert.notEqual(reboot.tracker.status().boot,f.tracker.status().boot);
 });
+test('an idle App watch retains a verified clock until an actual clock jump', () => {
+  const p = platform(core);
+  p.env.timeFactory = clockModule.create;
+  let wallOffset = 0;
+  p.env.clock = {...p.clock, now: () => p.clock.now() + wallOffset,
+    setWall: ms => { wallOffset = ms - p.clock.now(); }};
+  const node = runtime.create(p.env);
+  node.start();
+  const {epoch, revision, boot} = node.readClock();
+  node.syncClock({utcMs: 1792051200000, timezoneMinutes: 120, uncertaintyMs: 2000,
+    source: 'vera_server', syncId: '11111111-1111-4111-8111-111111111111',
+    epoch, revision, boot});
+  p.clock.advance(12 * 60000);
+  assert.equal(node.readClock().quality, 'vera_server');
+  assert.equal(node.health().scheduled, false);
+  assert.equal(node.samples.pending(), 0);
+  wallOffset -= 10000;
+  assert.equal(node.readClock().quality, 'discontinuous');
+  node.dispose();
+  assert.equal(p.clock.timers.size, 0);
+});
 test('full time journal blocks sync without erasing history or stopping samples',()=>{
   const f=setup();while(f.history.append('clock',1,{type:'test'})) { /* Fill bounded audit. */ }
   const before=f.clock.now();assert.throws(()=>f.tracker.sync(request(f)));assert.equal(f.clock.now(),before);

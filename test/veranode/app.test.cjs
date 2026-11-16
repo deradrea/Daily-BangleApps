@@ -21,7 +21,7 @@ function fixture(savedStyle, batteryValue = 80, boot = false) {
   let update, input, statsReads = 0;
   const stats = {pending: 123, stored: 128, capacity: 2944, available: 2816, full: false};
   const options = {wakeOnBTN1: true};
-  const context = {require: name => name === "Storage" ? storage : core, global: {__FILE__: boot ? 'veranode.app.js' : undefined, VeraNode: {state,
+  const context = {require: name => name === "Storage" ? storage : core, global: {VeraBoot: boot ? {} : undefined, VeraNode: {state,
     displaySettings: new core.DisplayPreferences(storage),
     start: () => {state.running = true;},
     samples: {pending: () => stats.pending, stats: () => {statsReads++; return {...stats};}},

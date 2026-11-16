@@ -14,7 +14,7 @@
     // Draw only when work advances, never invent a percentage or keep a timer
     // alive after startup. Avoid repainting each segment on the flash fast path.
     var step = total > 0 ? Math.floor(done * 24 / total) : 0;
-    if (typeof g === "undefined" || (phase === previousPhase && done !== total &&
+    if (startup.uiReady || typeof g === "undefined" || (phase === previousPhase && done !== total &&
       step === previousStep && Date.now() - lastPaint < 1500)) return;
     previousPhase = phase; previousStep = step;
     Bangle.setLCDPower(true); Bangle.setLCDBrightness(1); Bangle.setBacklight(true);

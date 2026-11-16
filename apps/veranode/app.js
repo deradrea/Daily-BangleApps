@@ -894,9 +894,10 @@
   // Replace the loader frame with visible evidence that startup completed.
   // Only once per runtime boot; returning from settings must not keep waking
   // the display, and a pending consent/alert must retain precedence.
-  if (!node.uiReadyShown && global.__FILE__ === "veranode.app.js") {
-    node.uiReadyShown = true;
+  var startup = global.VeraBoot;
+  if (startup && !startup.uiReady) {
     if (!ui.alert) ui.show("temporary");
+    startup.uiReady = true;
   }
 })();
 
