@@ -46,6 +46,7 @@
   progress("Sistema", 0, 0);
   try {
   var storage = require("Storage");
+  var installed = storage.readJSON("veranode.info", 1) || {};
   var core = require("veranode.core.js");
   var wire = require("veranode.wire.js"), server, txBytes = 20;
   var ids = {
@@ -99,6 +100,7 @@
     }
   });
   server = wire.create({chunkSize: function() { return txBytes; }, node: global.VeraNode, mac: global.VeraNode.state.mac,
+    installedBuild: installed.revision,
     describe: function() {
       return {board: process.env.BOARD, firmware: process.env.VERSION,
         batteryPercent: E.getBattery(), charging: Bangle.isCharging(),

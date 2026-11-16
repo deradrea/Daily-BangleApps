@@ -164,6 +164,8 @@ exports.create = function(env) {
           revision:state.policy.revision,expiresAt:state.policy.expiresAt,
           stale:Date.now()>state.policy.expiresAt} : null;
         snapshot.capabilities.displaySettings = !!node.displaySettings;
+        if (typeof env.installedBuild === "string" && env.installedBuild.length <= 89 &&
+          /^veranode-[a-z0-9.-]+$/.test(env.installedBuild)) snapshot.installedBuild = env.installedBuild;
         snapshot.capabilities.administrativeErase = !!(node.administration && node.administration.status().executionEnabled);
         if (env.describe) {
           try { snapshot.hardware = env.describe(); }

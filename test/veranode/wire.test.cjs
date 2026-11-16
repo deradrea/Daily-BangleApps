@@ -4,10 +4,10 @@ const core = require('../../apps/veranode/core.js');
 const runtime = require('../../apps/veranode/runtime.js');
 const wire = require('../../apps/veranode/wire.js');
 const {platform, policy, Clock} = require('./helpers.cjs');
-function setup(failConsent = false, describe, chunkSize) {
+function setup(failConsent = false, describe, chunkSize, installedBuild) {
   const p = platform(core), node = runtime.create(p.env), output = [];
   let consent, encrypted = true;
-  const server = wire.create({node, describe, chunkSize, mac: p.env.mac, clock: p.clock,
+  const server = wire.create({node, describe, chunkSize, installedBuild, mac: p.env.mac, clock: p.clock,
     send: text => output.push(text), encrypted: () => encrypted, consent: value => {
       consent = value;
       if (value && failConsent) throw new Error('private context must not appear in reply');
@@ -188,12 +188,14 @@ test('clock writes require encrypted physical consent just like measurements', (
 
 
 test('status exposes bounded capacity and optional hardware without writing sensor journals',()=>{
- const f=setup(false,()=>({batteryPercent:91,charging:true,firmware:'2v29',board:'BANGLEJS2',storageFreeBytes:1000000})), data=policy();
+ const installedBuild = 'veranode-0.2.0-dev-0123456789abcdef';
+ const f=setup(false,()=>({batteryPercent:91,charging:true,firmware:'2v29',board:'BANGLEJS2',storageFreeBytes:1000000}),undefined,installedBuild), data=policy();
  f.command({id:'auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});f.server.decide(true);f.responses();
  f.node.samples.append('sample',1,{});const before=[...f.p.storage.files.entries()];
  f.command({id:'read',op:'status'});const state=f.responses()[0].result;
  assert.deepEqual(state.buffers.samples,{capacity:2944,stored:1,pending:1,available:2943,full:false});
  assert.equal(state.recordIntervalMs,30000);assert.equal(state.hardware.batteryPercent,91);
+ assert.equal(state.installedBuild,installedBuild);
  assert.equal(state.contextConfigured,false);assert.deepEqual([...f.p.storage.files.entries()],before);
  const bad=setup(false,()=>{throw new Error('hardware unavailable');});
  bad.command({id:'auth',op:'authorize',user:data.user,scope:data.scope,mac:data.mac});bad.server.decide(true);bad.responses();
