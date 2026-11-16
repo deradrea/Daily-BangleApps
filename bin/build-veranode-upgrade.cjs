@@ -4,7 +4,8 @@ const root=path.resolve(__dirname,'..'),hash=x=>crypto.createHash('sha256').upda
 const sources=[
  ['dist/veranode/veranode-0.2.0-dev-f4f3226f8bca4f26/package.json','91d5ae89f4c715ddec004dd98a30277ca7251671604ad69913873c78d928aa01'],
  ['test/veranode/fixtures/c212/package.json','838057b1fa2260cfc816f6db83b75649622017681ca971b4fa3a5dba0fa8e562'],
- ['dist/veranode/veranode-0.2.0-dev-545d8915cd396d71/package.json','7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a']];
+ ['dist/veranode/veranode-0.2.0-dev-545d8915cd396d71/package.json','7b52d46b446d497ee914c668065df70f7d2f9871f5f79ffeb35b0015c16df42a'],
+ ['dist/veranode/veranode-0.2.0-dev-e994a5ceb708bce5/package.json','fd819f3397db909d717c8153fdb881226e300609c241f7f48ac5031214b77614']];
 function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  const sourceCommit=cp.execFileSync('git',['rev-parse',(options.sourceCommit||'HEAD')+'^{commit}'],{cwd:root,encoding:'utf8'}).trim(),inputs={};
  const historical=cp.execFileSync('git',['show',sourceCommit+':bin/build-veranode-upgrade.cjs'],{cwd:root});
