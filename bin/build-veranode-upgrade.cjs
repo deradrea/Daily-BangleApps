@@ -27,6 +27,16 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  const allowedSources=options.sourceRuntime===undefined
    ? packages : packages.filter(p=>p.revision===options.sourceRuntime && p.revision!==target.revision);
  if(!allowedSources.length)throw Error('Pilot source runtime is not recognized');
+ let betaPreparation;
+ if(options.sourceZero){
+  const raw=fs.readFileSync(options.sourceZero),zero=JSON.parse(raw),[source]=allowedSources;
+  const zeroFiles=new Map(zero.target.files.map(file=>[file.name,file]));
+  if(allowedSources.length!==1 || zero.runtimeRevision!==source.revision || zero.runtimePackageSha256!==source.packageSha256 ||
+     source.files.some(file=>zeroFiles.get(file.name)?.sha256!==file.sha256 || zeroFiles.get(file.name)?.size!==file.size)){
+   throw Error('Pilot Zero source does not match the installed runtime inventory');
+  }
+  betaPreparation={sourceZeroSha256:hash(raw),runtimeSha256:target.packageSha256};
+ }
  const bootupdate=committed('apps/boot/bootupdate.js'),bootloader=committed('apps/boot/bootloader.js');
  const crlf=bytes=>Buffer.from(bytes.toString('utf8').replace(/\r?\n/g,'\r\n'));
  const variants=bytes=>[...new Set([hash(bytes),hash(crlf(bytes))])];
@@ -43,7 +53,7 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
    recovery:'per-file-old-copy-sha256',activation:'explicit-after-verification',
    contract:{schema:'vera-bangle-update-contract/3',operationBinding:true,frozenBackup:true,profileAbsence:true,
     verifiedBoot:true,rollbackOnlyRecovery:true,postBootRecovery:true,leaseMaxMs:60000,serverGrantMaxSeconds:300,operationMaxSeconds:7200}},
-  provenance:{sourceCommit,bootloaderPrimaryNormalization:'crlf',builderSha256:hash(committed('bin/build-veranode-upgrade.cjs')),inputs},hardwareValidated:false};
+  provenance:{sourceCommit,bootloaderPrimaryNormalization:'crlf',builderSha256:hash(committed('bin/build-veranode-upgrade.cjs')),inputs,betaPreparation},hardwareValidated:false};
  const payload=Buffer.from(JSON.stringify(plan,null,2)+'\n'),sha256=hash(payload),revision='veranode-upgrade-1-'+sha256.slice(0,16),directory=path.join(output,revision);
  fs.mkdirSync(directory,{recursive:true});const file=path.join(directory,'upgrade.json');if(fs.existsSync(file)){if(!fs.readFileSync(file).equals(payload))throw Error('Immutable artifact conflict');}else fs.writeFileSync(file,payload,{flag:'wx'});
  const descriptor={schema:'vera-bangle-upgrade-descriptor/1',revision,sha256,size:payload.length,targetRevision:target.revision,
@@ -53,8 +63,8 @@ function build(output=path.join(root,'dist/veranode-upgrade'),options={}){
  return {revision,sha256,size:payload.length,path:file,descriptor,plan};
 }
 if(require.main===module){
- const sourceRuntime=process.argv[2];
- const r=build(undefined,{sourceRuntime});
+ const [, ,sourceRuntime,sourceZero]=process.argv;
+ const r=build(undefined,{sourceRuntime,sourceZero});
  console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));
 }
 module.exports={build};
