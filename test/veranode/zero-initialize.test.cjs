@@ -176,6 +176,11 @@ test('boot display includes every stage, heartbeat, touch consent and errors wit
 test('confirmation cannot claim physical sensor samples, and refuses a stopped collector',()=>{
  const f=fixture();f.prepare();f.p.beginWipe(target.fingerprint);while(f.p.status().phase!=='verified'){if(f.p.status().phase==='wiping'&&!f.env.isolated()){f.boot(true);f.p.recover(binding);f.p.setConsent(true);}f.p.step();}f.p.syncTime(binding,1800000000000,'11111111-1234-4234-8234-123456789abc');f.p.activate();
  assert.throws(()=>f.p.confirm(binding),/Riavvio/);f.context.global.VeraZeroBootGeneration=binding.generation;f.context.global.VeraZeroBootExecutionId=binding.executionId;assert.throws(()=>f.p.confirm(binding),/raccolta/);f.health={running:true,scheduled:true,hrmRequested:true,sampleCount:0};const result=f.p.confirm(binding);assert.equal(result.softwareReady,true);assert.equal(result.sensorSamplesVerified,false);assert.equal(result.clockVerified,false);
+ f.health={running:true,scheduled:false,hrmRequested:false,appIdle:true,sampleCount:0};
+ const idle=f.p.confirm(binding);
+ assert.equal(idle.softwareReady,true);
+ assert.equal(idle.collectionReady,true);
+ assert.equal(idle.collectionRunning,false);
 });
 
 test('repeated completed confirmation is read-only and low battery uses the same strict gate as Mobile',()=>{

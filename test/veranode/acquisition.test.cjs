@@ -133,3 +133,21 @@ test('actual boot plus actual clock starts sensors and records offline through s
  node.pauseRecording(false);assert.equal(node.health().hrmRequested,true);assert.ok(node.samples.next>high);
  node.dispose();assert.equal(node.health().scheduled,false);
 });
+
+test('clock startup errors remain diagnosable and allow a clean retry',()=>{
+ const f=offlinePlatform(core);let fail=true;
+ f.env.timeFactory=()=>({
+   start:()=>{if(fail)throw Error('clock startup failed');},
+   status:()=>({revision:0}),
+   observe:()=>false,
+ });
+ const node=runtime.create(f.env);
+ assert.throws(()=>node.start(),/clock startup failed/);
+ assert.equal(node.state.running,false);
+ assert.match(node.health().startError,/clock startup failed/);
+ assert.equal(f.bus.listenerCount('HRM'),0);
+ fail=false;node.start();
+ assert.equal(node.state.running,true);
+ assert.equal(node.health().startError,null);
+ node.dispose();
+});

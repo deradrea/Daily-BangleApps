@@ -251,10 +251,10 @@ exports.create = function(env) {
   function start() {
     if (state.running || disposed) return;
     if (env.progress) env.progress("Sensori", 0, 0);
-    if (timeTracker) { timeTracker.start(); state.clockRevision = timeTracker.status().revision; }
     // A failed hardware start must never leave a successful running flag.
     sensorHealth.startError = null;
     try {
+      if (timeTracker) { timeTracker.start(); state.clockRevision = timeTracker.status().revision; }
       env.on("HRM", onHeart); env.on("connect", connected); env.on("disconnect", disconnected);
       state.connected = env.connected();
       var acquiring = state.collectionMode === "active";
