@@ -286,14 +286,19 @@ test('display-only consent has a timer expiry independent of wall-clock changes'
 
 test('collection reconnect accepts only the key approved on watch and does not grant maintenance', () => {
   const f = setup(), data = policy(), relayKey = '12345678-1234-4123-8123-123456789abc';
-  f.node.installPolicy(data, true);
+  assert.equal(f.node.state.policy, null);
   f.node.start();
   f.command({id:'auth-relay', op:'authorize', user:data.user, scope:data.scope, mac:data.mac, relayKey});
   f.server.decide(true);
   assert.equal(f.responses()[0].result.authorized,true);
   f.command({id:'start-relay',op:'collection_session',seconds:120});
   assert.equal(f.responses()[0].result.active,true);
+  f.p.clock.advance(31000);
+  f.command({id:'read-relay',op:'batch',stream:'samples',epoch:f.node.samples.checkpoint.epoch,after:0});
+  const first = f.responses()[0].result.rows[0];
+  assert.equal(first.data.scope, data.scope);
   f.server.reset();
+  f.p.clock.advance(31000);
   f.command({id:'wrong-relay',op:'collection_resume',mac:data.mac,relayKey:'wrong'});
   assert.equal(f.responses()[0].result.authorized,false);
   f.secure(false);
@@ -303,6 +308,11 @@ test('collection reconnect accepts only the key approved on watch and does not g
   f.command({id:'right-relay',op:'collection_resume',mac:data.mac,relayKey});
   assert.equal(f.responses()[0].result.authorized,true);
   assert.equal(f.consent(),null);
+  f.command({id:'read-resumed',op:'batch',stream:'samples',epoch:first.epoch,after:first.seq});
+  const recovered = f.responses()[0].result.rows;
+  assert.ok(recovered.length > 0);
+  assert.equal(recovered[0].seq, first.seq + 1);
+  assert.ok(recovered.every(row => row.data.scope === data.scope));
   f.command({id:'no-settings',op:'settings_get'});
   assert.equal(f.responses()[0].ok,false);
   f.command({id:'stop-relay',op:'collection_session',seconds:0});
@@ -311,4 +321,37 @@ test('collection reconnect accepts only the key approved on watch and does not g
   f.command({id:'stopped-relay',op:'collection_resume',mac:data.mac,relayKey});
   assert.equal(f.responses()[0].result.authorized,false);
   f.server.dispose();f.node.dispose();
+});
+
+test('compact sample index is bounded, authorized and keeps archive custody intact', () => {
+  const f = setup(), data = policy();
+  const epoch = f.node.samples.checkpoint.epoch;
+  const command = {id: 'index', op: 'sample_index', epoch, after: 0, limit: 16};
+  f.command(command);
+  assert.equal(f.responses()[0].ok, false);
+  f.command({id: 'auth-index', op: 'authorize', user: data.user, scope: data.scope, mac: data.mac});
+  f.server.decide(true);
+  f.responses();
+  for (let n = 1; n <= 17; n++) {
+    f.node.samples.append('sample', n * 30000, {scope: data.scope, values: {battito: {at: n * 30000, value: 72, quality: 90}}});
+  }
+  f.command({id: 'status-index', op: 'status'});
+  assert.equal(f.responses()[0].result.transfer.sampleIndexRecords, 16);
+  f.command({...command, limit: 17});
+  assert.equal(f.responses()[0].ok, false);
+  f.command({...command, epoch: 'wrong'});
+  assert.equal(f.responses()[0].ok, false);
+  f.command(command);
+  const compact = f.responses()[0];
+  assert.deepEqual(compact.result, {epoch, index: Array.from({length: 16}, (_, i) => [i + 1, (i + 1) * 30000])});
+  let fullBytes = 0;
+  for (let after = 0; after < 16; after += 4) {
+    f.command({id: 'legacy', op: 'batch', stream: 'samples', epoch, after});
+    fullBytes += JSON.stringify(f.responses()[0]).length;
+  }
+  const compactBytes = JSON.stringify(compact).length;
+  assert.ok(compactBytes < fullBytes / 2);
+  process.stdout.write('Compact benchmark (16 synthetic records): ' + fullBytes + ' -> ' + compactBytes + ' JSON bytes\n');
+  assert.equal(f.node.samples.checkpoint.ack, 0);
+  assert.equal(f.node.samples.readBatch(16, 1)[0].seq, 17);
 });

@@ -94,7 +94,7 @@ exports.create = function(env) {
     if (req.op === "collection_resume") {
       var policy = env.node.state.policy;
       if (pending || owner || displaySession || !relayGrant || relayGrant.key !== req.relayKey ||
-          !policy || policy.user !== relayGrant.user || policy.scope !== relayGrant.scope ||
+          (policy && (policy.user !== relayGrant.user || policy.scope !== relayGrant.scope)) ||
           req.mac !== env.mac || !env.node.appSessionActive()) {
         answer(req.id, {authorized:false}); return;
       }
@@ -127,7 +127,7 @@ exports.create = function(env) {
     if (req.op === "revoke") { owner = null; clearDisplay(); clearConsent(); answer(req.id, {revoked: true}); return; }
     if(!owner && displaySession && req.op!=="settings_get" && req.op!=="settings_set") {answer(req.id,null,"Sessione limitata al display");return;}
     if (!owner && !displaySession) { answer(req.id, null, "Conferma sul Bangle richiesta"); return; }
-    if (owner && owner.relay && !["status","clock","batch","ack","collection_state","collection_session"].includes(req.op)) {
+    if (owner && owner.relay && !["status","clock","batch","sample_index","ack","collection_state","collection_session"].includes(req.op)) {
       answer(req.id,null,"Sessione limitata alla raccolta");return;
     }
     try {
@@ -140,6 +140,7 @@ exports.create = function(env) {
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
           live: state.running && state.collectionEnabled !== false, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
         if (node.timeHistory) {
+          snapshot.capabilities.clockServerSync = true;
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
           snapshot.timeEpoch = node.timeHistory.checkpoint.epoch;
@@ -147,7 +148,7 @@ exports.create = function(env) {
         }
         snapshot.buffers = {samples: node.samples.stats(), events: node.events.stats()};
         if (node.timeHistory) snapshot.buffers.clock = node.timeHistory.stats();
-        snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, integrity: "fnv1a32"};
+        snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, sampleIndexRecords: 16, integrity: "fnv1a32"};
         snapshot.recordIntervalMs = state.recordIntervalMs;
         snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true || state.collectionEnabled === false;
         snapshot.capabilities.collectionControl = typeof node.setCollection === "function";
@@ -172,9 +173,9 @@ exports.create = function(env) {
       } else if (req.op === "collection_state") {
         answer(req.id, {mode: state.collectionMode, active: node.appSessionActive(), pending: node.samples.pending()});
       } else if (req.op === "collection_session") {
-        if (req.seconds !== 0 && (!state.policy || state.policy.user !== owner.user || state.policy.scope !== owner.scope))
+        if (req.seconds !== 0 && state.policy && (state.policy.user !== owner.user || state.policy.scope !== owner.scope))
           throw new Error("Configurazione orologio non associata alla sessione");
-        var active = node.setAppSession(req.seconds);
+        var active = node.setAppSession(req.seconds, owner.scope);
         if (req.seconds === 0) relayGrant = null;
         answer(req.id, {active: active});
       } else if (req.op === "collection_set") {
@@ -210,6 +211,14 @@ exports.create = function(env) {
         }
         else {node.administration.offer(req.grant);answer(req.id,{confirmationRequired:true});}
         // Destruction can only be confirmed from the watch UI. No BLE execute op.
+      } else if (req.op === "sample_index") {
+        var samples = node.samples;
+        if (req.epoch !== samples.checkpoint.epoch) throw new Error("Archivio cambiato");
+        var limit = req.limit;
+        if (typeof limit !== "number" || Math.floor(limit) !== limit || limit < 1 || limit > 16)
+          throw new Error("Limite indice non valido");
+        var index = samples.readBatch(req.after, limit).map(function(row) { return [row.seq, row.at]; });
+        answer(req.id, {epoch: samples.checkpoint.epoch, index: index});
       } else if (req.op === "batch" || req.op === "ack") {
         if (!["samples", "events", "clock"].includes(req.stream)) throw new Error("Archivio non valido");
         var journal = req.stream === "samples" ? node.samples : req.stream === "events" ? node.events : node.timeHistory;
