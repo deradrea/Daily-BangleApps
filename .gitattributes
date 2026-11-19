@@ -19,3 +19,4 @@ dist/veranode-zero/** -text
 bin/veranode-dedicated-target.cjs -text
 bin/veranode-runtime-selection.cjs -text
 releases/veranode-runtime.json -text
+test/veranode/fixtures/c212-core.js -text

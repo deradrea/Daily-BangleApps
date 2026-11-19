@@ -80,6 +80,10 @@ exports.create = function(env) {
     replyOptions["$" + req.id] = {integrity: req.integrity === true, safeTransport: req.safeTransport === true};
     diagnostics.requests++; diagnostics.lastOp = req.op;
     if (req.op === "authorize") diagnostics.authorizations++;
+    // Public transport metadata only. No identity, samples or authorization.
+    if (req.op === "link_security") {
+      answer(req.id, {encrypted: !!env.encrypted()}); return;
+    }
     if (!env.encrypted()) { answer(req.id, null, "Collegamento cifrato richiesto"); return; }
     // This grants only harmless display settings after local physical consent.
     // No server token is interpreted or claimed to be verified by the watch.
@@ -127,8 +131,11 @@ exports.create = function(env) {
     if (req.op === "revoke") { owner = null; clearDisplay(); clearConsent(); answer(req.id, {revoked: true}); return; }
     if(!owner && displaySession && req.op!=="settings_get" && req.op!=="settings_set") {answer(req.id,null,"Sessione limitata al display");return;}
     if (!owner && !displaySession) { answer(req.id, null, "Conferma sul Bangle richiesta"); return; }
-    if (owner && owner.relay && !["status","clock","batch","sample_index","ack","collection_state","collection_session"].includes(req.op)) {
+    if (owner && owner.relay && !["status","clock","clock_sync","batch","sample_index","ack","collection_state","collection_session"].includes(req.op)) {
       answer(req.id,null,"Sessione limitata alla raccolta");return;
+    }
+    if (owner && owner.relay && req.op === "clock_sync" && req.source !== "vera_server") {
+      answer(req.id,null,"Riferimento Vera richiesto per la raccolta");return;
     }
     try {
       var node = env.node, state = node.state;

@@ -60,7 +60,7 @@ test('canonical dedicated builder produces 14 verified files and records its rel
   const sourceCommit=cp.execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   const config=JSON.parse(cp.execFileSync('git',['show',sourceCommit+':initialization/zero/dedicated-release.json'],{cwd:root}));
   const r=require('../../bin/build-veranode-zero.cjs').build(tmp,{targetProfile:'veranode-only',sourceCommit});
-  assert.equal(r.bundle.target.files.length,14);assert.equal(r.bundle.bootstrap.length,7);assert.equal(r.bundle.targetProfile,'veranode-only');
+  assert.equal(r.bundle.target.files.length,14);assert.deepEqual(r.bundle.bootstrap.map(f=>f.name),['vz.provider.js','vz.integrity.js','vz.platform.js','vz.recovery.js','vz.app.js','vz.display.js','0vz.boot.js','vz.target.js']);assert.equal(r.bundle.targetProfile,'veranode-only');
   assert.equal(r.bundle.executionEnabled,config.executionEnabled);assert.equal('hardwareIdentityVerified' in r.bundle,false);assert.equal('allowedMacs' in r.bundle.executionPolicy,false);assert.deepEqual(r.bundle.executionPolicy,config.executionPolicy);
   for(const f of [...r.bundle.bootstrap,...r.bundle.target.files]){const b=Buffer.from(f.base64,'base64');assert.equal(b.length,f.size);assert.equal(sha(b),f.sha256);}
   assert.equal(r.bundle.target.installOrder.length,13);assert.equal(r.bundle.target.installOrder.at(-1),'.bootcde');assert.equal(r.bundle.target.installOrder.includes('.boot0'),false);

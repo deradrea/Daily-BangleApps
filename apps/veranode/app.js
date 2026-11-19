@@ -683,6 +683,10 @@
     if (!disposed && locked) Bangle.setLocked(false);
   }
   function lcdChanged(on) {
+    if (!disposed) {
+      if (on && node.startDisplayRead) node.startDisplayRead();
+      if (!on && node.endDisplayRead) node.endDisplayRead();
+    }
     if (!disposed && !on && state.consent && ui.alert && ui.alert.channel === "consent") {
       traceConsent("lcd-restored"); power(true); draw(ui);
     }
@@ -690,6 +694,11 @@
   Bangle.on("charging", chargingChanged);
   Bangle.on("lock", lockedChanged);
   Bangle.on("lcdPower", lcdChanged);
+  var displayStartTimer = node.startDisplayRead && setTimeout(function() {
+    displayStartTimer = undefined;
+    if (!disposed && (!Bangle.isLCDOn || Bangle.isLCDOn()) && node.startDisplayRead)
+      node.startDisplayRead();
+  }, 0);
   Bangle.setUI({mode: "custom", clock: 0,
     btn: function() {
       pressedAt = Date.now();
@@ -881,6 +890,8 @@
       Bangle.removeListener("lock", lockedChanged);
       Bangle.removeListener("lcdPower", lcdChanged);
       cues.stop();
+      if (displayStartTimer !== undefined) clearTimeout(displayStartTimer);
+      if (node.endDisplayRead) node.endDisplayRead();
       if (redrawTimer) clearTimeout(redrawTimer);
       if (minuteTimer) clearInterval(minuteTimer);
       if (ringTimer) clearInterval(ringTimer);

@@ -355,3 +355,22 @@ test('compact sample index is bounded, authorized and keeps archive custody inta
   assert.equal(f.node.samples.checkpoint.ack, 0);
   assert.equal(f.node.samples.readBatch(16, 1)[0].seq, 17);
 });
+
+test('public security probe discloses only encryption and grants no read authority',()=>{
+ const f=setup();f.secure(false);f.command({id:'security',op:'link_security'});
+ assert.deepEqual(f.responses()[0].result,{encrypted:false});
+ f.command({id:'data',op:'status'});assert.equal(f.responses()[0].ok,false);
+ f.secure(true);f.command({id:'security2',op:'link_security'});assert.deepEqual(f.responses()[0].result,{encrypted:true});
+ f.command({id:'still-denied',op:'status'});assert.equal(f.responses()[0].ok,false);
+ f.server.dispose();f.node.dispose();
+});
+test('authorized relay may synchronize Vera time but cannot use phone time or maintenance',()=>{
+ const f=setup(),data=policy(),key='22222222-2222-4222-8222-222222222222';let writes=0;
+ f.node.syncClock=()=>{writes++;return {quality:'vera_server'};};
+ f.command({id:'auth-clock',op:'authorize',user:data.user,scope:data.scope,mac:data.mac,relayKey:key});
+ f.server.decide(true);f.responses();
+ f.command({id:'phone-clock',op:'clock_sync',source:'phone_auto'});assert.equal(f.responses()[0].ok,false);assert.equal(writes,0);
+ f.command({id:'vera-clock',op:'clock_sync',source:'vera_server'});assert.equal(f.responses()[0].result.quality,'vera_server');assert.equal(writes,1);
+ f.command({id:'profile-denied',op:'profile',profile:data});assert.equal(f.responses()[0].ok,false);
+ f.server.dispose();f.node.dispose();
+});

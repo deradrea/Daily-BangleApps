@@ -28,7 +28,7 @@ exports.create = function(env) {
     policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
     collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
-  var appUntil = 0, probeUntil = 0, appScope;
+  var appUntil = 0, probeUntil = 0, probePurpose, appScope;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
   function rebaseTime(delta) {
@@ -142,7 +142,6 @@ exports.create = function(env) {
     if (!collecting()) { if (state.collectionMode === "app" && timer !== undefined) quietSensors(); return; }
     observeTime();
     sensorHealth.tickCount++;
-    state.lastRecordAt = clock.now(); state.nextRecordAt = state.lastRecordAt + intervalMs;
     pressure();
     var acc;
     try { acc = env.accel(); } catch (e) { acc = null; }
@@ -151,6 +150,7 @@ exports.create = function(env) {
     }
     state.policyStale = !!state.policy && clock.now() > state.policy.expiresAt;
     if (state.collectionMode === "app" && appUntil <= clock.now()) { changed(); return; }
+    state.lastRecordAt = clock.now(); state.nextRecordAt = state.lastRecordAt + intervalMs;
     if (engine) engine.evaluate(state.values, clock.now());
     var values = {}, now = clock.now();
     Object.keys(state.values).forEach(function(field) {
@@ -278,6 +278,8 @@ exports.create = function(env) {
   }
   function health() {
     return {schemaVersion: 1, running: state.running, scheduled: timer !== undefined,
+      displayReadActive: probePurpose === "display" && probeUntil > clock.now() && appUntil <= clock.now(),
+      sensorProbeActive: probePurpose === "installer" && probeUntil > clock.now() && appUntil <= clock.now(),
       appIdle: state.collectionMode === "app" && appUntil <= clock.now() && probeUntil <= clock.now(),
       hrmRequested: sensorHealth.hrmRequested, maintenancePaused: state.maintenancePaused === true,
       recordingBlocked: state.paused === true || !collecting(),
@@ -360,18 +362,29 @@ exports.create = function(env) {
     changed();
   }
   // Installer-only sensor check: bounded in RAM, no user records or alerts.
-  function probeSensors() {
+  function probeSensors(purpose) {
+    if (purpose !== "display" && probePurpose === "display" && probeUntil > clock.now()) {
+      probePurpose = "installer"; probeUntil = clock.now() + 65000; return true;
+    }
     if (state.collectionMode !== "app" || !state.running || state.maintenancePaused ||
         appUntil > clock.now() || probeUntil > clock.now()) return false;
     if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
     probeUntil = clock.now() + 65000;
+    probePurpose = purpose === "display" ? "display" : "installer";
+    if (probePurpose === "display") state.values = {};
     sensorHealth.hrmRequested = true;
     scheduleCollection();
     return true;
   }
+  function endDisplayRead() {
+    if (probePurpose !== "display") return false;
+    probeUntil = 0; probePurpose = undefined;
+    if (state.collectionMode === "app" && appUntil <= clock.now()) quietSensors();
+    return true;
+  }
   function setAppSession(seconds, scope) {
     if (state.collectionMode !== "app") return false;
-    probeUntil = 0;
+    probeUntil = 0; probePurpose = undefined;
     if (seconds === 0) { appUntil = 0; appScope = undefined; quietSensors(); changed(); return false; }
     scope = scope || (state.policy && state.policy.scope);
     if (!state.running || state.maintenancePaused || !scope ||
@@ -393,7 +406,7 @@ exports.create = function(env) {
     env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
     env.hrm(false); listeners = [];
   }
-  return {state: state, probeSensors: probeSensors, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, setCollection: setCollection, setCollectionMode: setCollectionMode, setAppSession: setAppSession, appSessionActive: function() { return state.collectionMode === 'app' && appUntil > clock.now(); }, installPolicy: installPolicy, respond: respond,
+  return {state: state, probeSensors: probeSensors, startDisplayRead: function() { return probeSensors("display"); }, endDisplayRead: endDisplayRead, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, setCollection: setCollection, setCollectionMode: setCollectionMode, setAppSession: setAppSession, appSessionActive: function() { return state.collectionMode === 'app' && appUntil > clock.now(); }, installPolicy: installPolicy, respond: respond,
     administration: env.administration || null,
     displaySettings: new core.DisplayPreferences(storage),
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,
