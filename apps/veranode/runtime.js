@@ -31,6 +31,13 @@ exports.create = function(env) {
   var appUntil = 0, probeUntil = 0, probePurpose, appScope;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
+  function clearPressureTimer() {
+    // Espruino reuses timer slots. Release the handle when its timer ends so
+    // later sensor cleanup cannot cancel an unrelated BLE/UI timer.
+    var id = pressureTimer;
+    pressureTimer = undefined;
+    if (id !== undefined) clock.clearTimeout(id);
+  }
   function rebaseTime(delta) {
     state.values = {};
     if (appUntil) appUntil += delta;
@@ -41,7 +48,7 @@ exports.create = function(env) {
       engine.states[id].last = null; engine.states[id].since = null;
     });
     pressureGeneration++; pendingPressure = false;
-    if (pressureTimer) clock.clearTimeout(pressureTimer);
+    clearPressureTimer();
     lastNotify = 0;
     if (timeTracker) state.clockRevision = timeTracker.status().revision;
     changed();
@@ -100,7 +107,7 @@ exports.create = function(env) {
     if (lastNotify > clock.now()) lastNotify = clock.now() - 1000;
     var wait = 1000 - (clock.now() - lastNotify);
     if (wait > 0) {
-      if (!notifyTimer) notifyTimer = clock.setTimeout(function() { notifyTimer = null; notify(); }, wait);
+      if (notifyTimer === undefined) notifyTimer = clock.setTimeout(function() { notifyTimer = undefined; notify(); }, wait);
       return;
     }
     lastNotify = clock.now();
@@ -121,21 +128,22 @@ exports.create = function(env) {
     var generation = ++pressureGeneration;
     pressureTimer = clock.setTimeout(function() {
       if (generation !== pressureGeneration) return;
+      pressureTimer = undefined;
       pressureGeneration++; pendingPressure = false; sensorHealth.temperatureFailures++;
     }, 5000);
     var request;
     try {
       request = env.pressure();
       if (!request || typeof request.then !== "function") throw new Error("Sensore non disponibile");
-    } catch (e) { clock.clearTimeout(pressureTimer); pendingPressure = false; sensorHealth.temperatureFailures++; return; }
+    } catch (e) { clearPressureTimer(); pendingPressure = false; sensorHealth.temperatureFailures++; return; }
     request.then(function(value) {
       if (disposed || generation !== pressureGeneration) return;
-      clock.clearTimeout(pressureTimer); pendingPressure = false;
+      clearPressureTimer(); pendingPressure = false;
       if (value && typeof value.temperature === "number" && isFinite(value.temperature)) {
         sensorHealth.temperatureReads++; ingest("temperatura", value.temperature, 100);
       } else sensorHealth.temperatureFailures++;
     }, function() {
-      if (generation === pressureGeneration) { clock.clearTimeout(pressureTimer); pendingPressure = false; sensorHealth.temperatureFailures++; }
+      if (generation === pressureGeneration) { clearPressureTimer(); pendingPressure = false; sensorHealth.temperatureFailures++; }
     });
   }
   function tick() {
@@ -269,7 +277,7 @@ exports.create = function(env) {
       sensorHealth.startError = String(e).slice(0, 120);
       if (timer !== undefined) clock.clearInterval(timer);
       timer = undefined;
-      if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
+      clearPressureTimer();
       pressureGeneration++; pendingPressure = false;
       env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
       try { env.hrm(false); } catch (_) { /* Keep the original startup error. */ }
@@ -299,8 +307,7 @@ exports.create = function(env) {
     timer = undefined;
     state.nextRecordAt = null;
     pressureGeneration++; pendingPressure = false;
-    if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
-    pressureTimer = undefined;
+    clearPressureTimer();
     if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
     notifyTimer = undefined;
     sensorHealth.hrmRequested = false;
@@ -401,8 +408,9 @@ exports.create = function(env) {
     disposed = true; state.running = false; sensorHealth.hrmRequested = false;
     if (timer !== undefined) clock.clearInterval(timer);
     timer = undefined;
-    if (notifyTimer) clock.clearTimeout(notifyTimer);
-    if (pressureTimer) clock.clearTimeout(pressureTimer);
+    if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
+    notifyTimer = undefined;
+    clearPressureTimer();
     env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
     env.hrm(false); listeners = [];
   }
