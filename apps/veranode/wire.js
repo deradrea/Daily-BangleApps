@@ -34,6 +34,11 @@ exports.create = function(env) {
     if (text.length > 8183) text = ascii({id: id, ok: false, error: "Risposta troppo grande"});
     if (options.integrity) {
       text = text.slice(0, -1);
+      // CRC32 is native on Bangle.js 2. Keep legacy FNV replies unless the
+      // client explicitly requests CRC32 and this runtime supplies it.
+      if (options.checksum === "crc32" && typeof env.crc32 === "function") {
+        text += "#c" + ("00000000" + (env.crc32(text) >>> 0).toString(16)).slice(-8) + "\n";
+      } else {
       var hash = 0x811c9dc5;
       for (var i = 0; i < text.length; i++) {
         hash ^= text.charCodeAt(i);
@@ -41,6 +46,7 @@ exports.create = function(env) {
         hash = hash >>> 0;
       }
       text += "#" + ("00000000" + hash.toString(16)).slice(-8) + "\n";
+      }
     }
     replies.push({text: text, at: 0, safeTransport: options.safeTransport === true});
     if (!timer) pump();
@@ -77,7 +83,7 @@ exports.create = function(env) {
   function handle(req) {
     // Espruino does not implement bounded regex repetitions such as {1,40}.
     if (!req || typeof req.id !== "string" || req.id.length < 1 || req.id.length > 40 || !/^[a-z0-9_-]+$/i.test(req.id)) { diagnostics.invalidIds++; return; }
-    replyOptions["$" + req.id] = {integrity: req.integrity === true, safeTransport: req.safeTransport === true};
+    replyOptions["$" + req.id] = {integrity: req.integrity === true, checksum: req.checksum, safeTransport: req.safeTransport === true};
     diagnostics.requests++; diagnostics.lastOp = req.op;
     if (req.op === "authorize") diagnostics.authorizations++;
     // Public transport metadata only. No identity, samples or authorization.

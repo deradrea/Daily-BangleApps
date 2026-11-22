@@ -99,6 +99,7 @@
     }
   });
   server = wire.create({chunkSize: function() { return txBytes; }, node: global.VeraNode, mac: global.VeraNode.state.mac,
+    crc32: function(text) { return E.CRC32(text); },
     describe: function() {
       return {board: process.env.BOARD, firmware: process.env.VERSION,
         batteryPercent: E.getBattery(), charging: Bangle.isCharging(),
