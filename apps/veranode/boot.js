@@ -106,6 +106,7 @@
     },
     clock: {setTimeout: setTimeout, clearTimeout: clearTimeout},
     encrypted: function() { return !!NRF.getSecurityStatus().encrypted; },
+    bonded: function() { return !!NRF.getSecurityStatus().bonded; },
     consent: function(value) { global.VeraNode.state.consent = value; global.VeraNode.changed(); },
     send: function(text) {
       var response = {}; response[wire.service] = {}; response[wire.service][wire.response] = {value: text, notify: true};

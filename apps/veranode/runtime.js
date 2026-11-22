@@ -2,6 +2,32 @@
 exports.create = function(env) {
   var core = env.core, storage = env.storage, clock = env.clock;
   var config = storage.readJSON("veranode.config.json", true) || {};
+  // App collection is bound once to the assigned context, independently of
+  // optional alert profiles. Read one small record; never scan sensor data.
+  var appOwnerKey = "veranode.owner", appOwnerRaw = storage.read(appOwnerKey);
+  var appOwner = core.unpack(appOwnerRaw);
+  function validAppOwner(value) {
+    return value && value.v === 1 && value.mac === env.mac &&
+      typeof value.user === "string" && value.user.length === 36 && /^[0-9a-f-]+$/i.test(value.user) &&
+      typeof value.scope === "string" && value.scope.length > 0 && value.scope.length <= 120;
+  }
+  var appOwnerInvalid = appOwnerRaw !== undefined && !validAppOwner(appOwner);
+  function bindAppOwner(user, scope) {
+    var next = {v: 1, mac: env.mac, user: user, scope: scope};
+    if (!validAppOwner(next) || appOwnerInvalid) throw new Error("Legame App da verificare");
+    if ((appOwner && (appOwner.user !== user || appOwner.scope !== scope)) ||
+        (state.policy && (state.policy.user !== user || state.policy.scope !== scope)))
+      throw new Error("Device assegnato a un altro contesto");
+    if (appOwner) return true;
+    try {
+      storage.write(appOwnerKey, core.pack(next));
+      var checked = core.unpack(storage.read(appOwnerKey));
+      if (!validAppOwner(checked) || JSON.stringify(checked) !== JSON.stringify(next))
+        throw new Error("Legame App non salvato");
+      appOwner = checked;
+    } catch (e) { appOwnerInvalid = true; throw e; }
+    return true;
+  }
   var intervalMs = typeof config.recordMs === "number" && isFinite(config.recordMs) ?
     Math.max(10000, Math.min(45000, config.recordMs)) : 30000;
   // 24 hours at the configured cadence, plus two segments for partial ACKs.
@@ -180,6 +206,8 @@ exports.create = function(env) {
   function installPolicy(profile, trusted) {
     if (trusted !== true) throw new Error("Profilo Vera non verificato");
     var canonical = core.validatePolicy(profile, state.mac);
+    if (appOwner && (canonical.user !== appOwner.user || canonical.scope !== appOwner.scope))
+      throw new Error("Cambio utente: necessaria procedura di riassegnazione");
     if (state.policy && (canonical.scope !== state.policy.scope || canonical.user !== state.policy.user)) {
       throw new Error("Cambio utente: necessaria procedura di riassegnazione");
     }
@@ -415,7 +443,7 @@ exports.create = function(env) {
     env.hrm(false); listeners = [];
   }
   return {state: state, probeSensors: probeSensors, startDisplayRead: function() { return probeSensors("display"); }, endDisplayRead: endDisplayRead, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, setCollection: setCollection, setCollectionMode: setCollectionMode, setAppSession: setAppSession, appSessionActive: function() { return state.collectionMode === 'app' && appUntil > clock.now(); }, installPolicy: installPolicy, respond: respond,
-    administration: env.administration || null,
+    administration: env.administration || null, bindAppOwner: bindAppOwner,
     displaySettings: new core.DisplayPreferences(storage),
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,
     readClock: function() { if (!timeTracker) throw new Error("Controllo orario non disponibile"); observeTime(); return timeTracker.status(); },

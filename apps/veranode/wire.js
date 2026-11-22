@@ -1,5 +1,5 @@
 /* Bounded, paced JSON RPC over a dedicated encrypted BLE characteristic.
- * Physical consent is required once per connection; never stops live sensors.
+ * Assigned App collection uses the bonded phone; management keeps local consent.
  */
 exports.service = "d4a10000-7b2c-4c61-9e3a-5f42616e676c";
 exports.request = "d4a10001-7b2c-4c61-9e3a-5f42616e676c";
@@ -82,7 +82,10 @@ exports.create = function(env) {
     if (req.op === "authorize") diagnostics.authorizations++;
     // Public transport metadata only. No identity, samples or authorization.
     if (req.op === "link_security") {
-      answer(req.id, {encrypted: !!env.encrypted()}); return;
+      var security = {encrypted: !!env.encrypted()};
+      if (typeof env.bonded === "function" && typeof env.node.bindAppOwner === "function")
+        security.assignedCollection = true;
+      answer(req.id, security); return;
     }
     if (!env.encrypted()) { answer(req.id, null, "Collegamento cifrato richiesto"); return; }
     // This grants only harmless display settings after local physical consent.
@@ -98,6 +101,7 @@ exports.create = function(env) {
     if (req.op === "collection_resume") {
       var policy = env.node.state.policy;
       if (pending || owner || displaySession || !relayGrant || relayGrant.key !== req.relayKey ||
+          (typeof env.bonded === "function" && !env.bonded()) ||
           (policy && (policy.user !== relayGrant.user || policy.scope !== relayGrant.scope)) ||
           req.mac !== env.mac || !env.node.appSessionActive()) {
         answer(req.id, {authorized:false}); return;
@@ -122,6 +126,20 @@ exports.create = function(env) {
       var policy = env.node.state.policy;
       if (policy && (policy.user !== req.user || policy.scope !== req.scope)) {
         answer(req.id, null, "Device assegnato a un altro contesto"); return;
+      }
+      // Mobile verifies the current assignment with Vera before opening this
+      // relay. First use trusts that assigned App on an already bonded phone;
+      // persist its context before authorizing, then reject context changes.
+      // This is not server-signature verification by the watch.
+      if (req.relayKey && typeof env.bonded === "function") {
+        if (!env.bonded()) { answer(req.id, null, "Galaxy non associato al Bangle"); return; }
+        try { env.node.bindAppOwner(req.user, req.scope); }
+        catch (e) { answer(req.id, null, e.message || "Legame App da verificare"); return; }
+        owner = {user: req.user, scope: req.scope, relay: true};
+        relayGrant = {key: req.relayKey, user: req.user, scope: req.scope};
+        clearDisplay(); env.node.state.peerName = req.peerName || null;
+        if (env.node.changed) env.node.changed();
+        answer(req.id, {authorized: true, authorization: "assigned-bond-v1"}); return;
       }
       owner = null; clearDisplay(); env.node.state.peerName = null; pending = req;
       env.consent({id: req.id, user: req.user, scope: req.scope, decide: decide});
