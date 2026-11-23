@@ -16,3 +16,9 @@ nessuna durata batteria è stata misurata. Collaudo 24 ore sospeso.
 
 Pacchetto Zero 1c75e811, runtime 03da46fb, Mobile minimo 1.0.233.
 Pubblicazione, catalogo, installazione e prova fisica sono stati distinti.
+
+Pubblicata come prerelease GitHub veranode-zero-1-1c75e811fad731c2; quattro
+asset riscaricati e confrontati byte per byte. PR15 integrata nel commit
+7836d3fbd21d12cdbd9c9e6a1ca534e37a98171d. CI build e functional passati;
+il job separato mention-app-authors fallisce con GitHub422 sul nome aziendale,
+non e una prova funzionale fallita e non e stato disabilitato.
