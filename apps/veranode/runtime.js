@@ -54,7 +54,7 @@ exports.create = function(env) {
     policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
     collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
-  var appUntil = 0, probeUntil = 0, probePurpose, appScope;
+  var appUntil = 0, probeUntil = 0, probePurpose, appScope, displayGraceTimer;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
   function clearPressureTimer() {
@@ -331,6 +331,7 @@ exports.create = function(env) {
   }
 
   function quietSensors() {
+    clearDisplayGrace();
     if (timer !== undefined) clock.clearInterval(timer);
     timer = undefined;
     state.nextRecordAt = null;
@@ -397,8 +398,20 @@ exports.create = function(env) {
     changed();
   }
   // Installer-only sensor check: bounded in RAM, no user records or alerts.
+  function clearDisplayGrace() {
+    var id = displayGraceTimer;
+    displayGraceTimer = undefined;
+    if (id !== undefined) clock.clearTimeout(id);
+  }
   function probeSensors(purpose) {
+    if (!disposed && state.running && purpose === "display" && probePurpose === "display" && probeUntil > clock.now() &&
+        state.collectionMode === "app" && appUntil <= clock.now() && !state.maintenancePaused) {
+      // A quick second look reuses the live sensor and its timestamped values.
+      // No flash write, recording window or extra HRM power cycle.
+      clearDisplayGrace(); probeUntil = clock.now() + 65000; return true;
+    }
     if (purpose !== "display" && probePurpose === "display" && probeUntil > clock.now()) {
+      clearDisplayGrace();
       probePurpose = "installer"; probeUntil = clock.now() + 65000; return true;
     }
     if (state.collectionMode !== "app" || !state.running || state.maintenancePaused ||
@@ -413,8 +426,15 @@ exports.create = function(env) {
   }
   function endDisplayRead() {
     if (probePurpose !== "display") return false;
-    probeUntil = 0; probePurpose = undefined;
-    if (state.collectionMode === "app" && appUntil <= clock.now()) quietSensors();
+    if (displayGraceTimer !== undefined) return true;
+    // Keep optical acquisition warm for at most 15 seconds after LCD standby.
+    // The existing display-only path still cannot append samples or alerts.
+    displayGraceTimer = clock.setTimeout(function() {
+      displayGraceTimer = undefined;
+      if (probePurpose !== "display") return;
+      probeUntil = 0; probePurpose = undefined;
+      if (state.collectionMode === "app" && appUntil <= clock.now()) quietSensors();
+    }, 15000);
     return true;
   }
   function setAppSession(seconds, scope) {
@@ -433,6 +453,7 @@ exports.create = function(env) {
     return true;
   }
   function dispose() {
+    clearDisplayGrace();
     disposed = true; state.running = false; sensorHealth.hrmRequested = false;
     if (timer !== undefined) clock.clearInterval(timer);
     timer = undefined;

@@ -29,3 +29,32 @@ test('disabled collection rejects a display probe',()=>{
  const f=platform(core),n=runtime.create(f.env);n.start();n.setCollectionMode('off');
  assert.equal(n.startDisplayRead(),false);assert.equal(n.health().hrmRequested,false);n.dispose();
 });
+
+test('quick display wake reuses HRM and valid readings without recording',()=>{
+ const f=platform(core),n=runtime.create(f.env);n.start();n.startDisplayRead();
+ f.bus.emit('HRM',{bpm:72,confidence:99});n.endDisplayRead();
+ f.clock.advance(10000);const powers=f.power.length;
+ assert.equal(n.startDisplayRead(),true);
+ assert.equal(f.power.length,powers);assert.equal(n.state.values.battito.value,72);
+ f.clock.advance(6000);assert.equal(n.health().hrmRequested,true);
+ assert.equal(n.samples.pending(),0);assert.equal(n.events.pending(),0);assert.equal(f.sent.length,0);
+ n.endDisplayRead();f.clock.advance(15000);
+ assert.equal(n.health().hrmRequested,false);assert.equal(n.health().scheduled,false);n.dispose();
+});
+
+test('display grace cannot stop a new App session or survive disposal',()=>{
+ const f=platform(core),n=runtime.create(f.env);n.start();n.startDisplayRead();n.endDisplayRead();
+ n.setAppSession(120,'fixture');f.clock.advance(16000);
+ assert.equal(n.appSessionActive(),true);assert.equal(n.health().hrmRequested,true);
+ n.dispose();assert.equal(n.startDisplayRead(),false);const count=f.clock.timers.size;f.clock.advance(90000);
+ assert.equal(f.clock.timers.size,count);assert.equal(n.health().hrmRequested,false);
+});
+
+test('standby grace is bounded and repeated standby does not extend it',()=>{
+ const f=platform(core),n=runtime.create(f.env);n.start();n.startDisplayRead();n.endDisplayRead();
+ f.clock.advance(14000);n.endDisplayRead();f.clock.advance(1000);
+ assert.equal(n.health().hrmRequested,false);assert.equal(n.samples.pending(),0);
+ assert.equal(n.startDisplayRead(),true);f.bus.emit('HRM',{bpm:74,confidence:99});
+ n.endDisplayRead();n.probeSensors();f.clock.advance(16000);
+ assert.equal(n.health().sensorProbeActive,true);assert.equal(n.health().hrmRequested,true);n.dispose();
+});
