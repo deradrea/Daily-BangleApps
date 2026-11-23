@@ -1,6 +1,6 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "production-candidate",
+  "status": "published-stable",
   "name": "Vera Node 0.2.0",
   "channel": "stable",
   "revision": "veranode-zero-1-3c5a855b2227bd32",
@@ -12,14 +12,17 @@
   "runtimeRevision": "veranode-0.2.0-dev-dd417d23566b7214",
   "runtimePackageSha256": "1eac954024483d5dca501ff72cf508c6cd9c3962111da14c1b035c646e59be9d",
   "minimumMobileVersion": "1.0.229",
-  "recommendedMobileVersion": "1.0.230",
+  "recommendedMobileVersion": "1.0.231",
   "board": "BANGLEJS2",
   "firmware": [
     "2v29"
   ],
   "installationMode": "zero-initialization",
   "requiresMobilePackageSupport": true,
-  "published": false,
+  "published": true,
+  "publicationSurface": "github-release",
+  "catalogManagedBy": "Vera Web",
+  "releaseUrl": "https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-zero-1-3c5a855b2227bd32",
   "hardwareTestPerformed": false,
   "runtimeHardwareValidated": true,
   "hardwareValidationScope": "Software-only preserving installation and brief App/30s BLE/custody tests on 4C:46. This exact Zero package was not physically initialized.",
