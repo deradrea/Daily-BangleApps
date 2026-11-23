@@ -1,0 +1,27 @@
+{
+  "schema": "vera-node-initialization-selection/1",
+  "status": "prepared-beta",
+  "name": "Vera Node 0.2.0 Beta 7",
+  "channel": "beta",
+  "revision": "veranode-zero-1-1c75e811fad731c2",
+  "path": "dist/veranode-zero/veranode-zero-1-1c75e811fad731c2/initialize.json",
+  "sha256": "1c75e811fad731c2b783853505cd61f45c6e680a0702d54def86dc7fc3123f70",
+  "size": 300438,
+  "sourceCommit": "4afdd6287be3055e63cd7c2049580e3086051b53",
+  "sourceChannel": "beta",
+  "runtimeRevision": "veranode-0.2.0-dev-03da46fb9ac6cf47",
+  "runtimePackageSha256": "b020f70c8da80dffe8337074bfc2ebf1202db82b64bdf705e429c3bdbceebf1d",
+  "minimumMobileVersion": "1.0.233",
+  "recommendedMobileVersion": "1.0.233",
+  "board": "BANGLEJS2",
+  "firmware": [
+    "2v29"
+  ],
+  "installationMode": "zero-initialization",
+  "requiresMobilePackageSupport": true,
+  "published": false,
+  "hardwareTestPerformed": false,
+  "runtimeHardwareValidated": false,
+  "offline24hTrial": "suspended",
+  "stableChanged": false
+}

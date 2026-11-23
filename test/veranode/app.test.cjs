@@ -58,6 +58,24 @@ test('touch outside the action cannot acknowledge; correct target is durable res
 });
 module.exports = {fixture};
 
+test('a deletion offer opens its watch screen and waits for a deliberate touch', () => {
+  const f=fixture();
+  let confirmations=0;
+  f.node.administration={
+    status: () => ({executionEnabled:true,phase:'confirmation',total:2,removed:0}),
+    confirm: () => confirmations++
+  };
+  f.update();
+  assert.equal(f.power.at(-1),true);
+  assert.ok(f.graphics.commands.some(c=>c.type==='text' && c.args[0]==='Verifica e cancella'));
+  assert.equal(confirmations,0);
+  f.input.touch(1,{x:85,y:152});
+  assert.equal(confirmations,0);
+  f.clock.advance(401);
+  f.input.touch(1,{x:85,y:152});
+  assert.equal(confirmations,1);
+});
+
 test('management consent preempts but never acknowledges a queued sensor alert', () => {
   const f=fixture(), decisions=[];
   f.state.queue.push({id:'retained',metric:'battito',value:110,severity:'warning'});
@@ -203,7 +221,34 @@ test('double click pins without restarting animation and remains visible past ti
   f.clock.advance(550);f.input.btnRelease();
   assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Fisso'));
   assert.equal(f.power.length,powers);f.clock.advance(15000);assert.equal(f.power.at(-1),true);
-  f.input.btnRelease();assert.equal(f.power.at(-1),false);f.input.remove();
+  f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();
+  assert.equal(f.power.at(-1),false);f.input.remove();
+});
+
+test('side button wakes, opens Menu, goes back and leaves automatic standby armed', () => {
+  const f=fixture('still'), has=text=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===text);
+  function click(delay=701) { f.input.btnRelease(); f.clock.advance(delay); }
+  click(401);
+  assert.ok(!has('Menu'));
+  click();
+  assert.ok(has('Menu'));
+  f.input.touch(1,{x:88,y:60});
+  assert.ok(has('Raccolta')&&!has('Menu'));
+  click();
+  assert.ok(has('Menu'));
+  click();
+  assert.ok(!has('Menu'));
+  f.clock.advance(10000);
+  assert.equal(f.power.at(-1),false);
+  click(401);
+  f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();
+  f.clock.advance(701);
+  assert.ok(has('Fisso')&&!has('Menu'));
+  click();
+  assert.ok(has('Menu'));
+  f.clock.advance(10000);
+  assert.equal(f.power.at(-1),false);
+  f.input.remove();
 });
 
 test('trace follows acquisition interval, holds at completion and resets only with the next cycle', () => {
@@ -253,10 +298,32 @@ test('clock revision cancels stale click state and preserves display wake and pi
   f.state.clockRevision=3;f.update();
   f.clock.advance(600);f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();f.clock.advance(501);
   f.clock.advance(12000);assert.equal(f.power.at(-1),true);
-  f.input.btnRelease();f.clock.advance(501);assert.equal(f.power.at(-1),false);
+  f.input.btnRelease();f.clock.advance(100);f.input.btnRelease();assert.equal(f.power.at(-1),false);
   f.input.remove();
 });
 
+test('menu drag is consumed once and footer arrows work without a swipe',()=>{
+  const f=fixture(), frame=()=>f.graphics.commands.filter(c=>c.type==='text').map(c=>c.args[0]);
+  const has=s=>frame().includes(s);
+  f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
+  f.input.drag({x:87,y:118,b:1});
+  f.input.drag({x:90,y:88,b:1});
+  f.input.swipe(0,-1); // firmware may report this before release
+  f.input.touch(1,{x:90,y:63,type:0});
+  f.input.drag({x:90,y:88,b:0});
+  f.input.swipe(0,-1); // or immediately after release
+  assert.ok(has('Memoria')&&has('Bluetooth'));assert.ok(!has('Sistema'));
+  f.clock.advance(200);f.input.touch(1,{x:135,y:161,type:0});
+  assert.ok(has('Sistema'));
+  f.clock.advance(160);f.input.touch(1,{x:45,y:161,type:0});
+  assert.ok(has('Memoria')&&!has('Sistema'));
+  f.input.drag({x:48,y:110,b:1});f.input.drag({x:90,y:88,b:1});
+  f.input.drag({x:90,y:88,b:0});
+  assert.ok(has('Memoria')&&!has('Sistema'));
+  f.clock.advance(200);f.input.touch(1,{x:160,y:60,type:0});
+  assert.ok(has('Da trasferire'));
+  f.input.remove();
+});
 test('scrolling menu keeps large labels and memory counts distinct',()=>{
   const f=fixture(),has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
   f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);
@@ -274,11 +341,31 @@ test('collection distinguishes BLE presence from delivery and flags blocked or s
   const f=fixture(), has=text=>f.graphics.commands.some(c=>c.type==='text'&&String(c.args[0])===text);
   f.state.lastRecordAt=f.clock.now()-12000;
   f.input.btnRelease();f.clock.advance(401);f.input.touch(1,{x:88,y:155});
-  assert.ok(has('BLE collegato'));assert.ok(has('Invio: vedi app'));
+  assert.ok(has('BLE collegato'));assert.ok(has('Attiva'));
   f.security.connected=false;f.update();f.clock.advance(2000);assert.ok(has('Offline'));
-  assert.ok(has('Senza telefono'));assert.ok(f.graphics.commands.some(c=>c.type==='text'&&/^Ultimo: [0-9][0-9]:[0-9][0-9]$/.test(c.args[0])));
+  assert.ok(f.graphics.commands.some(c=>c.type==='text'&&/^Ultimo: [0-9][0-9]:[0-9][0-9]$/.test(c.args[0])));
   f.state.paused=true;f.state.storageError='Memoria campioni piena';f.update();f.clock.advance(2000);
   assert.ok(has('Da verificare'));assert.ok(has('Verifica memoria'));assert.ok(!has('Attiva'));
+  f.input.remove();
+});
+
+test('collection menu exposes the three modes and retains access to memory', () => {
+  const f = fixture();
+  f.state.collectionMode = 'active';
+  f.node.setCollectionMode = mode => {
+    f.state.collectionMode = mode;
+    f.state.collectionEnabled = mode !== 'off';
+  };
+  f.input.btnRelease(); f.clock.advance(401);
+  f.input.touch(1, {x:88,y:155}); f.clock.advance(301);
+  f.input.touch(1, {x:88,y:120}); f.clock.advance(301);
+  const has = label => f.graphics.commands.some(c => c.type === 'text' && c.args[0] === label);
+  assert.ok(has('Attiva  •')); assert.ok(has('Disattiva')); assert.ok(has('App'));
+  f.input.touch(1, {x:88,y:140}); f.clock.advance(301);
+  assert.equal(f.state.collectionMode,'app');
+  assert.ok(has('Archivio di riserva'));
+  f.input.touch(1, {x:88,y:159});
+  assert.ok(has('Memoria'));
   f.input.remove();
 });
 
@@ -429,7 +516,8 @@ test('Nielsen: large scrolling destinations have gaps and predictable back',()=>
     }
     if(i>=2){f.input.swipe(0,-1);f.input.swipe(0,-1);}
     assert.ok(!f.graphics.commands.some(c=>c.type==='text'&&/^[12] \/ 2$/.test(c.args[0])));
-    assert.equal(f.graphics.commands.filter(c=>c.type==='drawRect'&&c.args[2]-c.args[0]===160&&c.args[3]-c.args[1]===50).length,2);
+    assert.equal(f.graphics.commands.filter(c=>c.type==='drawPoly'&&
+      c.args[0][0]===8&&c.args[0][2]===168&&[86,143].includes(c.args[0][1])).length,2);
     f.clock.advance(301);f.input.touch(1,{x:88,y:60+(i%2)*58});
     assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===destinations[i]));
     f.clock.advance(301);f.input.touch(1,{x:20,y:16});
@@ -492,9 +580,8 @@ test('administrative erase view includes pending records but cannot destroy data
 test('watch erase confirmation is a dedicated physical target and cannot repeat while running',()=>{
  const f=fixture();let phase='confirmation',confirms=0;
  f.node.administration={status:()=>({executionEnabled:true,phase,total:128,removed:0}),
-   confirm:()=>{confirms++;phase='running';},cancel:()=>true};
- f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);f.input.touch(1,{x:88,y:118});
- f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+   confirm:()=>{confirms++;phase='running';f.update();},cancel:()=>true};
+ f.update();
  const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
  assert.ok(has('Verifica e cancella'));assert.ok(has('Anche non trasferiti'));
  f.clock.advance(301);f.input.touch(1,{x:40,y:55});assert.equal(confirms,0);
@@ -505,8 +592,7 @@ test('cooperative verification has visible percentage, stays awake and can be ca
  const f=fixture();let phase='confirmation',confirms=0,cancels=0;
  f.node.administration={status:()=>({executionEnabled:true,phase,total:128,removed:0,verificationPercent:42,pending:false}),
   confirm:()=>{confirms++;phase='verifying';f.update();},cancel:()=>{cancels++;phase='idle';f.update();return true;}};
- f.input.btnRelease();f.clock.advance(401);f.input.swipe(0,1);f.input.touch(1,{x:88,y:118});
- f.clock.advance(301);f.input.touch(1,{x:88,y:156});f.clock.advance(301);f.input.touch(1,{x:88,y:156});
+ f.update();f.clock.advance(401);f.input.touch(1,{x:88,y:156});
  f.clock.advance(15000);f.update();f.clock.advance(2100);
  const has=t=>f.graphics.commands.some(c=>c.type==='text'&&c.args[0]===t);
  assert.ok(has('Verifica firma'));assert.ok(has('42%'));assert.ok(has('Annulla verifica'));assert.equal(f.power.at(-1),true);
@@ -607,4 +693,11 @@ test('remote preferences apply without waking LCD, preserve navigation and conse
  f.state.consent={id:'admin-display',purpose:'display',decide:()=>true};f.update();set({standbySeconds:5});f.clock.advance(21000);
  assert.equal(f.power.at(-1),true);assert.ok(f.graphics.commands.some(c=>c.type==='text'&&c.args[0]==='Solo display'));
  f.input.remove();assert.equal(preferences.listeners.length,0);assert.equal(f.clock.timers.size,0);
+});
+
+test('LCD events start and stop display-only sensing and UI removal releases its probe',()=>{
+ const f=fixture();let starts=0,ends=0;
+ f.node.startDisplayRead=()=>{starts++;};f.node.endDisplayRead=()=>{ends++;};
+ f.listeners.get('lcdPower')(true);f.listeners.get('lcdPower')(false);
+ assert.equal(starts,1);assert.equal(ends,1);f.input.remove();assert.equal(ends,2);
 });

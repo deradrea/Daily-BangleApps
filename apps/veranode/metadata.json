@@ -103,6 +103,12 @@
       "name": "veranode.config.json"
     },
     {
+      "name": "veranode.collection"
+    },
+    {
+      "name": "veranode.owner"
+    },
+    {
       "name": "veranode.face.json"
     },
     {

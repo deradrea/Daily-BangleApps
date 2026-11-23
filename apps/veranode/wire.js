@@ -1,5 +1,5 @@
 /* Bounded, paced JSON RPC over a dedicated encrypted BLE characteristic.
- * Physical consent is required once per connection; never stops live sensors.
+ * Assigned App collection uses the bonded phone; management keeps local consent.
  */
 exports.service = "d4a10000-7b2c-4c61-9e3a-5f42616e676c";
 exports.request = "d4a10001-7b2c-4c61-9e3a-5f42616e676c";
@@ -34,6 +34,11 @@ exports.create = function(env) {
     if (text.length > 8183) text = ascii({id: id, ok: false, error: "Risposta troppo grande"});
     if (options.integrity) {
       text = text.slice(0, -1);
+      // CRC32 is native on Bangle.js 2. Keep legacy FNV replies unless the
+      // client explicitly requests CRC32 and this runtime supplies it.
+      if (options.checksum === "crc32" && typeof env.crc32 === "function") {
+        text += "#c" + ("00000000" + (env.crc32(text) >>> 0).toString(16)).slice(-8) + "\n";
+      } else {
       var hash = 0x811c9dc5;
       for (var i = 0; i < text.length; i++) {
         hash ^= text.charCodeAt(i);
@@ -41,6 +46,7 @@ exports.create = function(env) {
         hash = hash >>> 0;
       }
       text += "#" + ("00000000" + hash.toString(16)).slice(-8) + "\n";
+      }
     }
     replies.push({text: text, at: 0, safeTransport: options.safeTransport === true});
     if (!timer) pump();
@@ -54,6 +60,7 @@ exports.create = function(env) {
     if (consentTimer) env.clock.clearTimeout(consentTimer);
     consentTimer = undefined; pending = null; env.consent(null);
   }
+  var relayGrant;
   function decide(approved) {
     if (!pending) return false;
     diagnostics.decisions++;
@@ -63,7 +70,10 @@ exports.create = function(env) {
         clearDisplay();displaySession={active:true};
         displayTimer=env.clock.setTimeout(clearDisplay,300000);
       }
-      else owner = {user: req.user, scope: req.scope};
+      else {
+        owner = {user: req.user, scope: req.scope, relay: !!req.relayKey};
+        if (req.relayKey) relayGrant = {key:req.relayKey, user:req.user, scope:req.scope};
+      }
     }
     env.node.state.peerName = (owner || displaySession) && typeof req.peerName === "string" ? req.peerName : null;
     if (env.node.changed) env.node.changed();
@@ -73,9 +83,16 @@ exports.create = function(env) {
   function handle(req) {
     // Espruino does not implement bounded regex repetitions such as {1,40}.
     if (!req || typeof req.id !== "string" || req.id.length < 1 || req.id.length > 40 || !/^[a-z0-9_-]+$/i.test(req.id)) { diagnostics.invalidIds++; return; }
-    replyOptions["$" + req.id] = {integrity: req.integrity === true, safeTransport: req.safeTransport === true};
+    replyOptions["$" + req.id] = {integrity: req.integrity === true, checksum: req.checksum, safeTransport: req.safeTransport === true};
     diagnostics.requests++; diagnostics.lastOp = req.op;
     if (req.op === "authorize") diagnostics.authorizations++;
+    // Public transport metadata only. No identity, samples or authorization.
+    if (req.op === "link_security") {
+      var security = {encrypted: !!env.encrypted()};
+      if (typeof env.bonded === "function" && typeof env.node.bindAppOwner === "function")
+        security.assignedCollection = true;
+      answer(req.id, security); return;
+    }
     if (!env.encrypted()) { answer(req.id, null, "Collegamento cifrato richiesto"); return; }
     // This grants only harmless display settings after local physical consent.
     // No server token is interpreted or claimed to be verified by the watch.
@@ -87,7 +104,22 @@ exports.create = function(env) {
       env.consent({id:req.id,purpose:"display",decide:decide});
       consentTimer=env.clock.setTimeout(function(){decide(false);},60000);return;
     }
+    if (req.op === "collection_resume") {
+      var policy = env.node.state.policy;
+      if (pending || owner || displaySession || !relayGrant || relayGrant.key !== req.relayKey ||
+          (typeof env.bonded === "function" && !env.bonded()) ||
+          (policy && (policy.user !== relayGrant.user || policy.scope !== relayGrant.scope)) ||
+          req.mac !== env.mac || !env.node.appSessionActive()) {
+        answer(req.id, {authorized:false}); return;
+      }
+      owner = {user:relayGrant.user, scope:relayGrant.scope, relay:true};
+      answer(req.id,{authorized:true}); return;
+    }
     if (req.op === "authorize") {
+      if (req.relayKey !== undefined && (typeof req.relayKey !== "string" ||
+          req.relayKey.length !== 36 || !/^[a-f0-9-]+$/.test(req.relayKey))) {
+        answer(req.id,null,"Chiave sessione non valida");return;
+      }
       if (pending) { answer(req.id, null, "Conferma gia in corso"); return; }
       if (typeof req.user !== "string" || req.user.length !== 36 || !/^[0-9a-f-]+$/i.test(req.user) ||
           typeof req.scope !== "string" || !req.scope || req.scope.length > 120 || req.mac !== env.mac) {
@@ -101,6 +133,20 @@ exports.create = function(env) {
       if (policy && (policy.user !== req.user || policy.scope !== req.scope)) {
         answer(req.id, null, "Device assegnato a un altro contesto"); return;
       }
+      // Mobile verifies the current assignment with Vera before opening this
+      // relay. First use trusts that assigned App on an already bonded phone;
+      // persist its context before authorizing, then reject context changes.
+      // This is not server-signature verification by the watch.
+      if (req.relayKey && typeof env.bonded === "function") {
+        if (!env.bonded()) { answer(req.id, null, "Galaxy non associato al Bangle"); return; }
+        try { env.node.bindAppOwner(req.user, req.scope); }
+        catch (e) { answer(req.id, null, e.message || "Legame App da verificare"); return; }
+        owner = {user: req.user, scope: req.scope, relay: true};
+        relayGrant = {key: req.relayKey, user: req.user, scope: req.scope};
+        clearDisplay(); env.node.state.peerName = req.peerName || null;
+        if (env.node.changed) env.node.changed();
+        answer(req.id, {authorized: true, authorization: "assigned-bond-v1"}); return;
+      }
       owner = null; clearDisplay(); env.node.state.peerName = null; pending = req;
       env.consent({id: req.id, user: req.user, scope: req.scope, decide: decide});
       consentTimer = env.clock.setTimeout(function() { decide(false); }, 60000);
@@ -109,6 +155,12 @@ exports.create = function(env) {
     if (req.op === "revoke") { owner = null; clearDisplay(); clearConsent(); answer(req.id, {revoked: true}); return; }
     if(!owner && displaySession && req.op!=="settings_get" && req.op!=="settings_set") {answer(req.id,null,"Sessione limitata al display");return;}
     if (!owner && !displaySession) { answer(req.id, null, "Conferma sul Bangle richiesta"); return; }
+    if (owner && owner.relay && !["status","clock","clock_sync","batch","sample_index","ack","collection_state","collection_session"].includes(req.op)) {
+      answer(req.id,null,"Sessione limitata alla raccolta");return;
+    }
+    if (owner && owner.relay && req.op === "clock_sync" && req.source !== "vera_server") {
+      answer(req.id,null,"Riferimento Vera richiesto per la raccolta");return;
+    }
     try {
       var node = env.node, state = node.state;
       if (req.op === "status") {
@@ -117,8 +169,9 @@ exports.create = function(env) {
           sampleAck: node.samples.checkpoint.ack, sampleDiscardedThrough: node.samples.checkpoint.discardedThrough || 0,
           sampleAdministrativePending: !!node.samples.eraseLock, eventEpoch: node.events.checkpoint.epoch,
           eventHigh: node.events.next - 1, eventAck: node.events.checkpoint.ack,
-          live: state.running, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
+          live: state.running && state.collectionEnabled !== false, capabilities: {light: true, sound: true, soundWeak: true, vibration: true, touch: true, clockTracking: !!node.timeHistory, manualClock: !!node.timeHistory && typeof node.setLocalClock === "function"}};
         if (node.timeHistory) {
+          snapshot.capabilities.clockServerSync = true;
           // Observe first, then freeze journal counters for this snapshot.
           snapshot.clock = node.readClock();
           snapshot.timeEpoch = node.timeHistory.checkpoint.epoch;
@@ -126,9 +179,14 @@ exports.create = function(env) {
         }
         snapshot.buffers = {samples: node.samples.stats(), events: node.events.stats()};
         if (node.timeHistory) snapshot.buffers.clock = node.timeHistory.stats();
-        snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, integrity: "fnv1a32"};
+        snapshot.transfer = {chunkBytes: env.chunkSize ? env.chunkSize() : 20, batchRecords: 4, sampleIndexRecords: 16, integrity: "fnv1a32"};
         snapshot.recordIntervalMs = state.recordIntervalMs;
-        snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true;
+        snapshot.recordingBlocked = state.paused === true || state.maintenancePaused === true || state.collectionEnabled === false;
+        snapshot.capabilities.collectionControl = typeof node.setCollection === "function";
+        if (snapshot.capabilities.collectionControl) snapshot.collectionEnabled = state.collectionEnabled;
+        snapshot.capabilities.collectionModes = typeof node.setCollectionMode === "function";
+        if (snapshot.capabilities.collectionModes) snapshot.collectionMode = state.collectionMode;
+        if (node.appSessionActive) snapshot.appSessionActive = node.appSessionActive();
         snapshot.preparationPaused = state.maintenancePaused === true;
         snapshot.storageError = state.storageError;
         if (node.health) snapshot.acquisitionHealth = node.health();
@@ -143,6 +201,21 @@ exports.create = function(env) {
           catch (_) { snapshot.hardwareError = true; }
         }
         answer(req.id, snapshot);
+      } else if (req.op === "collection_state") {
+        answer(req.id, {mode: state.collectionMode, active: node.appSessionActive(), pending: node.samples.pending()});
+      } else if (req.op === "collection_session") {
+        if (req.seconds !== 0 && state.policy && (state.policy.user !== owner.user || state.policy.scope !== owner.scope))
+          throw new Error("Configurazione orologio non associata alla sessione");
+        var active = node.setAppSession(req.seconds, owner.scope);
+        if (req.seconds === 0) relayGrant = null;
+        answer(req.id, {active: active});
+      } else if (req.op === "collection_set") {
+        if (typeof node.setCollection !== "function") throw new Error("Controllo raccolta non disponibile");
+        if (req.mode !== undefined) {
+          if (req.enabled !== undefined || typeof node.setCollectionMode !== "function")
+            throw new Error("Modalita raccolta non disponibile");
+          answer(req.id, {collectionMode: node.setCollectionMode(req.mode), collectionEnabled: state.collectionEnabled});
+        } else answer(req.id, {collectionEnabled: node.setCollection(req.enabled)});
       } else if (req.op === "settings_get" || req.op === "settings_set") {
         if(!node.displaySettings)throw new Error("Preferenze display non disponibili");
         answer(req.id,req.op==="settings_get"?node.displaySettings.read():node.displaySettings.set(req));
@@ -169,6 +242,14 @@ exports.create = function(env) {
         }
         else {node.administration.offer(req.grant);answer(req.id,{confirmationRequired:true});}
         // Destruction can only be confirmed from the watch UI. No BLE execute op.
+      } else if (req.op === "sample_index") {
+        var samples = node.samples;
+        if (req.epoch !== samples.checkpoint.epoch) throw new Error("Archivio cambiato");
+        var limit = req.limit;
+        if (typeof limit !== "number" || Math.floor(limit) !== limit || limit < 1 || limit > 16)
+          throw new Error("Limite indice non valido");
+        var index = samples.readBatch(req.after, limit).map(function(row) { return [row.seq, row.at]; });
+        answer(req.id, {epoch: samples.checkpoint.epoch, index: index});
       } else if (req.op === "batch" || req.op === "ack") {
         if (!["samples", "events", "clock"].includes(req.stream)) throw new Error("Archivio non valido");
         var journal = req.stream === "samples" ? node.samples : req.stream === "events" ? node.events : node.timeHistory;

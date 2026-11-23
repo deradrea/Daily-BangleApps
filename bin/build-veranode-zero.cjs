@@ -30,7 +30,7 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  if(dedicated){
   const selectionSource=committed('bin/veranode-runtime-selection.cjs');
   if(!fs.readFileSync(path.join(root,'bin/veranode-runtime-selection.cjs')).equals(selectionSource))throw Error('Runtime selector differs from canonical source');
-  const runtime=require('./veranode-runtime-selection.cjs').select(committed);
+  const runtime=require('./veranode-runtime-selection.cjs').select(committed,options.channel);
   target=target.map(f=>runtime.files.find(r=>r.name===f.name)||f);
   parent.runtimePackageSha256=runtime.packageSha256;
   parent.runtimeRevision=runtime.revision;
@@ -75,5 +75,5 @@ function build(output=path.join(root,'dist/veranode-zero'),options={}){
  fs.mkdirSync(dir,{recursive:true});for(const [name,b]of [['initialize.json',bytes],['descriptor.json',Buffer.from(JSON.stringify(descriptor,null,2)+'\n')],['source-manifest.json',manifestBytes]]){const dest=path.join(dir,name);if(fs.existsSync(dest)){if(!fs.readFileSync(dest).equals(b))throw Error('Immutable zero conflict');}else fs.writeFileSync(dest,b,{flag:'wx'});}
  return {revision,sha256:hash,size:bytes.length,path:path.join(dir,'initialize.json'),bundle,descriptor};
 }
-if(require.main===module){const r=build(undefined,process.argv.includes('--dedicated')?{targetProfile:'veranode-only'}:{});console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
+if(require.main===module){const options=process.argv.includes('--dedicated')?{targetProfile:'veranode-only'}:{};if(process.argv.includes('--beta'))options.channel='beta';const r=build(undefined,options);console.log(JSON.stringify({revision:r.revision,sha256:r.sha256,size:r.size,path:r.path}));}
 module.exports={build,canonical,validateDedicatedRelease,createBlockIntegrity};

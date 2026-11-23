@@ -59,6 +59,7 @@
       notify: true, readable: true};
   });
   services[wire.service] = {};
+  services[wire.service]["d4a10003-7b2c-4c61-9e3a-5f42616e676c"] = {value: [1], readable: true};
   services[wire.service][wire.request] = {writable: true, maxLen: 20,
     security: {write: {encrypted: true}}, onWrite: function(event) { if (server) server.receive(new Uint8Array(event.data)); }};
   services[wire.service][wire.response] = {value: [], maxLen: 180, notify: true,
@@ -98,6 +99,7 @@
     }
   });
   server = wire.create({chunkSize: function() { return txBytes; }, node: global.VeraNode, mac: global.VeraNode.state.mac,
+    crc32: function(text) { return E.CRC32(text); },
     describe: function() {
       return {board: process.env.BOARD, firmware: process.env.VERSION,
         batteryPercent: E.getBattery(), charging: Bangle.isCharging(),
@@ -105,6 +107,7 @@
     },
     clock: {setTimeout: setTimeout, clearTimeout: clearTimeout},
     encrypted: function() { return !!NRF.getSecurityStatus().encrypted; },
+    bonded: function() { return !!NRF.getSecurityStatus().bonded; },
     consent: function(value) { global.VeraNode.state.consent = value; global.VeraNode.changed(); },
     send: function(text) {
       var response = {}; response[wire.service] = {}; response[wire.service][wire.response] = {value: text, notify: true};

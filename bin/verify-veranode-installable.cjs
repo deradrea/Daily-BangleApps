@@ -9,6 +9,7 @@ const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
 async function audit() {
   const selection = JSON.parse(fs.readFileSync(path.join(root, 'releases/veranode-initialization.json')));
+  assert.ok(selection.sourceChannel === undefined || selection.sourceChannel === 'beta', 'known build source channel');
   const packagePath = path.resolve(root, selection.path);
   assert.ok(packagePath.startsWith(path.join(root, 'dist') + path.sep));
   const bytes = fs.readFileSync(packagePath);
@@ -56,7 +57,7 @@ async function audit() {
   }
   const rebuilt = require('./build-veranode-zero.cjs').build(
     fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'vera-installable-')),
-    {sourceCommit: selection.sourceCommit, targetProfile: 'veranode-only'});
+    {sourceCommit: selection.sourceCommit, targetProfile: 'veranode-only', channel: selection.sourceChannel});
   assert.ok(bytes.equals(fs.readFileSync(rebuilt.path)), 'reproducible build');
   const releaseUrl = selection.revision && 'https://github.com/deradrea/Daily-BangleApps/releases/tag/' + selection.revision;
   let remote = null;

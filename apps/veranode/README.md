@@ -258,3 +258,22 @@ interprete2v29: `node bin/test-veranode-display-espruino.cjs` con variabile
 VERA_ESPRUINO_EMULATOR_DIR sul bundle fissato dal manifest dei test. Nessun BLE
 fisico in questi comandi. Il candidato generato non equivale ad installazione
 hardware o pubblicazione del catalogo.
+
+
+### App session collection (candidate)
+
+A new installation defaults to App; stored choices are preserved. App starts
+sensors only after a monitoring session opens on the paired phone and the watch
+has a matching approved configuration. A temporary, scoped grant is retained
+in RAM across BLE link loss so the same phone session can reconnect without a
+second prompt. The watch retains unacknowledged samples; the phone acknowledges
+them only after durable custody. A watch or phone process restart requires new
+consent. If stop cannot reach the watch, it continues until the session lease
+expires (at most 24 hours from the most recent renewal).
+
+Offline (Sempre attiva) collects autonomously and is recovered manually. Off
+stops acquisition. Existing unlabelled or Offline records remain manually
+recoverable; automatic transfer never advances the contiguous archive cursor
+over them. Installation uses a bounded sensor probe without appending to the
+archive. BLE custody and MQTT delivery are separate acknowledgements. Verify
+latency, flash usage and battery on hardware before promoting the candidate.

@@ -47,7 +47,7 @@ test('full time journal blocks sync without erasing history or stopping samples'
   assert.ok(f.samples.append('sample',before,{}));assert.equal(f.history.pending(),64);
 });
 test('runtime sync clears stale sensor times and duration accumulators while preserving alert state',()=>{
-  const p=platform(core);p.env.timeFactory=clockModule.create;
+  const p=platform(core);p.storage.write('veranode.collection',core.pack(true));p.env.timeFactory=clockModule.create;
   let wallOffset=0;p.env.clock={...p.clock,now:()=>p.clock.now()+wallOffset,
     setWall:ms=>{wallOffset=ms-p.clock.now();}};
   const node=runtime.create(p.env);node.start();p.bus.emit('HRM',{bpm:72,confidence:99});

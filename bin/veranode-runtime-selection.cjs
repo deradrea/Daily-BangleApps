@@ -1,8 +1,9 @@
 /* One pinned runtime selection for initialization and preserving upgrade. */
 const crypto=require('node:crypto');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-function select(read){
- const config=JSON.parse(read('releases/veranode-runtime.json'));
+function select(read,channel){
+ if(channel!==undefined&&channel!=='beta')throw Error('Invalid runtime channel');
+ const config=JSON.parse(read(channel==='beta'?'releases/veranode-runtime-beta.json':'releases/veranode-runtime.json'));
  if(!config||Object.keys(config).sort().join(',')!=='path,revision,sha256'||
    !/^veranode-0\.2\.0-dev-[a-f0-9]{16}$/.test(config.revision)||
    !/^[a-f0-9]{64}$/.test(config.sha256)||

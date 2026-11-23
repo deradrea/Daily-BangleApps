@@ -2,6 +2,32 @@
 exports.create = function(env) {
   var core = env.core, storage = env.storage, clock = env.clock;
   var config = storage.readJSON("veranode.config.json", true) || {};
+  // App collection is bound once to the assigned context, independently of
+  // optional alert profiles. Read one small record; never scan sensor data.
+  var appOwnerKey = "veranode.owner", appOwnerRaw = storage.read(appOwnerKey);
+  var appOwner = core.unpack(appOwnerRaw);
+  function validAppOwner(value) {
+    return value && value.v === 1 && value.mac === env.mac &&
+      typeof value.user === "string" && value.user.length === 36 && /^[0-9a-f-]+$/i.test(value.user) &&
+      typeof value.scope === "string" && value.scope.length > 0 && value.scope.length <= 120;
+  }
+  var appOwnerInvalid = appOwnerRaw !== undefined && !validAppOwner(appOwner);
+  function bindAppOwner(user, scope) {
+    var next = {v: 1, mac: env.mac, user: user, scope: scope};
+    if (!validAppOwner(next) || appOwnerInvalid) throw new Error("Legame App da verificare");
+    if ((appOwner && (appOwner.user !== user || appOwner.scope !== scope)) ||
+        (state.policy && (state.policy.user !== user || state.policy.scope !== scope)))
+      throw new Error("Device assegnato a un altro contesto");
+    if (appOwner) return true;
+    try {
+      storage.write(appOwnerKey, core.pack(next));
+      var checked = core.unpack(storage.read(appOwnerKey));
+      if (!validAppOwner(checked) || JSON.stringify(checked) !== JSON.stringify(next))
+        throw new Error("Legame App non salvato");
+      appOwner = checked;
+    } catch (e) { appOwnerInvalid = true; throw e; }
+    return true;
+  }
   var intervalMs = typeof config.recordMs === "number" && isFinite(config.recordMs) ?
     Math.max(10000, Math.min(45000, config.recordMs)) : 30000;
   // 24 hours at the configured cadence, plus two segments for partial ACKs.
@@ -18,20 +44,37 @@ exports.create = function(env) {
   var samples = journal("veranode.s", sampleSegments, 32, "Campioni");
   var events = journal("veranode.e", 4, 16, "Eventi");
   var timeHistory = env.timeFactory ? journal("veranode.t", 4, 16, "Orario") : null;
+  var collectionKey = "veranode.collection";
+  var storedCollection = storage.read(collectionKey);
+  var savedCollection = core.unpack(storedCollection);
+  // Earlier versions stored a boolean. Keep their choices on first boot.
+  var collectionMode = storedCollection === undefined || savedCollection === "app" ? "app" :
+    savedCollection === true || savedCollection === "active" ? "active" : "off";
   var state = {v: "0.2.0", mac: env.mac, connected: false, recordIntervalMs: intervalMs, lastRecordAt: null, nextRecordAt: null, peerName: null, values: {}, running: false,
-    policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false};
+    policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
+    collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
+  var appUntil = 0, probeUntil = 0, probePurpose, appScope, displayGraceTimer;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
+  function clearPressureTimer() {
+    // Espruino reuses timer slots. Release the handle when its timer ends so
+    // later sensor cleanup cannot cancel an unrelated BLE/UI timer.
+    var id = pressureTimer;
+    pressureTimer = undefined;
+    if (id !== undefined) clock.clearTimeout(id);
+  }
   function rebaseTime(delta) {
     state.values = {};
+    if (appUntil) appUntil += delta;
+    if (probeUntil) probeUntil += delta;
     if (state.lastRecordAt !== null) state.lastRecordAt += delta;
     if (state.nextRecordAt !== null) state.nextRecordAt += delta;
     if (engine) Object.keys(engine.states).forEach(function(id) {
       engine.states[id].last = null; engine.states[id].since = null;
     });
     pressureGeneration++; pendingPressure = false;
-    if (pressureTimer) clock.clearTimeout(pressureTimer);
+    clearPressureTimer();
     lastNotify = 0;
     if (timeTracker) state.clockRevision = timeTracker.status().revision;
     changed();
@@ -81,12 +124,16 @@ exports.create = function(env) {
     saveAlerts();
     changed();
   }
+  function collecting() {
+    return !disposed && state.running && state.collectionEnabled && !state.maintenancePaused &&
+      (state.collectionMode !== "app" || Math.max(appUntil, probeUntil) > clock.now());
+  }
   function notify() {
-    if (!state.connected || disposed || !state.running || state.maintenancePaused) return;
+    if (!state.connected || !collecting()) return;
     if (lastNotify > clock.now()) lastNotify = clock.now() - 1000;
     var wait = 1000 - (clock.now() - lastNotify);
     if (wait > 0) {
-      if (!notifyTimer) notifyTimer = clock.setTimeout(function() { notifyTimer = null; notify(); }, wait);
+      if (notifyTimer === undefined) notifyTimer = clock.setTimeout(function() { notifyTimer = undefined; notify(); }, wait);
       return;
     }
     lastNotify = clock.now();
@@ -94,9 +141,10 @@ exports.create = function(env) {
     catch (e) { state.connected = false; }
   }
   function ingest(field, value, quality) {
-    if (disposed || !state.running || state.maintenancePaused) return;
+    if (!collecting()) return;
     observeTime();
     state.values[field] = {value: value, at: clock.now(), quality: quality};
+    if (state.collectionMode === "app" && appUntil <= clock.now()) { changed(); return; }
     if (engine) engine.evaluate(state.values, clock.now());
     notify(); changed();
   }
@@ -106,28 +154,28 @@ exports.create = function(env) {
     var generation = ++pressureGeneration;
     pressureTimer = clock.setTimeout(function() {
       if (generation !== pressureGeneration) return;
+      pressureTimer = undefined;
       pressureGeneration++; pendingPressure = false; sensorHealth.temperatureFailures++;
     }, 5000);
     var request;
     try {
       request = env.pressure();
       if (!request || typeof request.then !== "function") throw new Error("Sensore non disponibile");
-    } catch (e) { clock.clearTimeout(pressureTimer); pendingPressure = false; sensorHealth.temperatureFailures++; return; }
+    } catch (e) { clearPressureTimer(); pendingPressure = false; sensorHealth.temperatureFailures++; return; }
     request.then(function(value) {
       if (disposed || generation !== pressureGeneration) return;
-      clock.clearTimeout(pressureTimer); pendingPressure = false;
+      clearPressureTimer(); pendingPressure = false;
       if (value && typeof value.temperature === "number" && isFinite(value.temperature)) {
         sensorHealth.temperatureReads++; ingest("temperatura", value.temperature, 100);
       } else sensorHealth.temperatureFailures++;
     }, function() {
-      if (generation === pressureGeneration) { clock.clearTimeout(pressureTimer); pendingPressure = false; sensorHealth.temperatureFailures++; }
+      if (generation === pressureGeneration) { clearPressureTimer(); pendingPressure = false; sensorHealth.temperatureFailures++; }
     });
   }
   function tick() {
-    if (disposed || !state.running || state.maintenancePaused) return;
+    if (!collecting()) { if (state.collectionMode === "app" && timer !== undefined) quietSensors(); return; }
     observeTime();
     sensorHealth.tickCount++;
-    state.lastRecordAt = clock.now(); state.nextRecordAt = state.lastRecordAt + intervalMs;
     pressure();
     var acc;
     try { acc = env.accel(); } catch (e) { acc = null; }
@@ -135,6 +183,8 @@ exports.create = function(env) {
       ingest("accelerometro", {x: acc.x, y: acc.y, z: acc.z}, 100);
     }
     state.policyStale = !!state.policy && clock.now() > state.policy.expiresAt;
+    if (state.collectionMode === "app" && appUntil <= clock.now()) { changed(); return; }
+    state.lastRecordAt = clock.now(); state.nextRecordAt = state.lastRecordAt + intervalMs;
     if (engine) engine.evaluate(state.values, clock.now());
     var values = {}, now = clock.now();
     Object.keys(state.values).forEach(function(field) {
@@ -144,8 +194,8 @@ exports.create = function(env) {
     try {
       if (storage.getFree && storage.getFree() < 8192) { state.paused = true; state.storageError = "Spazio insufficiente"; }
       else {
-        var row = samples.append("sample", now, {scope: state.policy ? state.policy.scope : "unprovisioned",
-          revision: state.policy ? state.policy.revision : null, values: values});
+        var row = samples.append("sample", now, {scope: state.collectionMode === "app" ? appScope : state.policy ? state.policy.scope : "unprovisioned",
+          revision: state.policy ? state.policy.revision : null, collectionMode: state.collectionMode, values: values});
         state.paused = !row;
         if (!row) state.storageError = "Memoria campioni piena";
         else if (["Memoria campioni piena", "Spazio insufficiente", "Errore memoria campioni"].includes(state.storageError)) state.storageError = null;
@@ -156,6 +206,8 @@ exports.create = function(env) {
   function installPolicy(profile, trusted) {
     if (trusted !== true) throw new Error("Profilo Vera non verificato");
     var canonical = core.validatePolicy(profile, state.mac);
+    if (appOwner && (canonical.user !== appOwner.user || canonical.scope !== appOwner.scope))
+      throw new Error("Cambio utente: necessaria procedura di riassegnazione");
     if (state.policy && (canonical.scope !== state.policy.scope || canonical.user !== state.policy.user)) {
       throw new Error("Cambio utente: necessaria procedura di riassegnazione");
     }
@@ -221,7 +273,7 @@ exports.create = function(env) {
     state.queue.shift(); saveAlerts(); changed(); return true;
   }
   function onHeart(value) {
-    if (state.running && !state.maintenancePaused) sensorHealth.heartEvents++;
+    if (collecting()) sensorHealth.heartEvents++;
     if (value && typeof value.confidence === "number" && value.confidence >= 50 &&
         typeof value.bpm === "number" && isFinite(value.bpm) && value.bpm > 0 && value.bpm <= 65535) ingest("battito", value.bpm, value.confidence);
   }
@@ -235,24 +287,25 @@ exports.create = function(env) {
   function start() {
     if (state.running || disposed) return;
     if (env.progress) env.progress("Sensori", 0, 0);
-    if (timeTracker) { timeTracker.start(); state.clockRevision = timeTracker.status().revision; }
     // A failed hardware start must never leave a successful running flag.
     sensorHealth.startError = null;
     try {
+      if (timeTracker) { timeTracker.start(); state.clockRevision = timeTracker.status().revision; }
       env.on("HRM", onHeart); env.on("connect", connected); env.on("disconnect", disconnected);
       state.connected = env.connected();
-      if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
-      sensorHealth.hrmRequested = true;
+      var acquiring = state.collectionMode === "active";
+      if (acquiring && env.hrm(true) === false) throw new Error("Sensore battito non avviato");
+      sensorHealth.hrmRequested = acquiring;
       state.running = true;
-      timer = clock.setInterval(tick, intervalMs);
-      tick(); changed();
+      if (acquiring) scheduleCollection();
+      changed();
       if (env.progress) env.progress("Pronto", 1, 1);
     } catch (e) {
       state.running = false; sensorHealth.hrmRequested = false;
       sensorHealth.startError = String(e).slice(0, 120);
       if (timer !== undefined) clock.clearInterval(timer);
       timer = undefined;
-      if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
+      clearPressureTimer();
       pressureGeneration++; pendingPressure = false;
       env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
       try { env.hrm(false); } catch (_) { /* Keep the original startup error. */ }
@@ -261,12 +314,67 @@ exports.create = function(env) {
   }
   function health() {
     return {schemaVersion: 1, running: state.running, scheduled: timer !== undefined,
+      displayReadActive: probePurpose === "display" && probeUntil > clock.now() && appUntil <= clock.now(),
+      sensorProbeActive: probePurpose === "installer" && probeUntil > clock.now() && appUntil <= clock.now(),
+      appIdle: state.collectionMode === "app" && appUntil <= clock.now() && probeUntil <= clock.now(),
       hrmRequested: sensorHealth.hrmRequested, maintenancePaused: state.maintenancePaused === true,
-      recordingBlocked: state.paused === true || state.maintenancePaused === true,
+      recordingBlocked: state.paused === true || !collecting(),
       tickCount: sensorHealth.tickCount, heartEvents: sensorHealth.heartEvents,
       temperatureReads: sensorHealth.temperatureReads, temperatureFailures: sensorHealth.temperatureFailures,
       lastRecordAt: state.lastRecordAt, nextRecordAt: state.nextRecordAt,
       startError: sensorHealth.startError};
+  }
+
+  function scheduleCollection() {
+    if (timer === undefined) timer = clock.setInterval(tick, intervalMs);
+    tick();
+  }
+
+  function quietSensors() {
+    clearDisplayGrace();
+    if (timer !== undefined) clock.clearInterval(timer);
+    timer = undefined;
+    state.nextRecordAt = null;
+    pressureGeneration++; pendingPressure = false;
+    clearPressureTimer();
+    if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
+    notifyTimer = undefined;
+    sensorHealth.hrmRequested = false;
+    env.hrm(false);
+  }
+
+  function setCollectionMode(mode) {
+    if (disposed || !["active", "off", "app"].includes(mode)) throw new Error("Modalita raccolta non valida");
+    if (state.collectionMode === mode) return mode;
+    var enabled = mode !== "off";
+    var resume = mode === "active" && !collecting() && state.running && !state.maintenancePaused;
+    if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+    var value = core.pack(mode === "app" ? mode : enabled);
+    try {
+      storage.write(collectionKey, value);
+      if (storage.read(collectionKey) !== value) throw new Error("Preferenza raccolta non confermata");
+    } catch (e) {
+      if (resume) env.hrm(false);
+      throw e;
+    }
+    appUntil = probeUntil = 0;
+    appScope = undefined;
+    state.collectionMode = mode; state.collectionEnabled = enabled;
+    if (mode !== "active") {
+      state.values = {};
+      quietSensors();
+    } else if (resume) {
+      sensorHealth.hrmRequested = true;
+      scheduleCollection();
+    }
+    changed();
+    return mode;
+  }
+
+  function setCollection(enabled) {
+    if (typeof enabled !== "boolean") throw new Error("Comando raccolta non valido");
+    setCollectionMode(enabled ? "active" : "off");
+    return enabled;
   }
 
   // Explicit preparation hold: drain the archive before a fresh offline trial.
@@ -277,33 +385,86 @@ exports.create = function(env) {
     if ((state.maintenancePaused === true) === next) return;
     if (next) {
       state.maintenancePaused = true;
-      pressureGeneration++; pendingPressure = false;
-      if (pressureTimer !== undefined) clock.clearTimeout(pressureTimer);
-      pressureTimer = undefined;
-      if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
-      notifyTimer = undefined;
-      sensorHealth.hrmRequested = false;
-      env.hrm(false);
+      quietSensors();
     } else {
       // A failed resume must remain visibly paused, with no false running proof.
-      if (state.running && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
-      sensorHealth.hrmRequested = state.running;
+      var resume = state.running && state.collectionEnabled &&
+        (state.collectionMode !== "app" || appUntil > clock.now());
+      if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+      sensorHealth.hrmRequested = resume;
       state.maintenancePaused = false;
-      if (state.running) tick();
+      if (resume) scheduleCollection();
     }
     changed();
   }
+  // Installer-only sensor check: bounded in RAM, no user records or alerts.
+  function clearDisplayGrace() {
+    var id = displayGraceTimer;
+    displayGraceTimer = undefined;
+    if (id !== undefined) clock.clearTimeout(id);
+  }
+  function probeSensors(purpose) {
+    if (!disposed && state.running && purpose === "display" && probePurpose === "display" && probeUntil > clock.now() &&
+        state.collectionMode === "app" && appUntil <= clock.now() && !state.maintenancePaused) {
+      // A quick second look reuses the live sensor and its timestamped values.
+      // No flash write, recording window or extra HRM power cycle.
+      clearDisplayGrace(); probeUntil = clock.now() + 65000; return true;
+    }
+    if (purpose !== "display" && probePurpose === "display" && probeUntil > clock.now()) {
+      clearDisplayGrace();
+      probePurpose = "installer"; probeUntil = clock.now() + 65000; return true;
+    }
+    if (state.collectionMode !== "app" || !state.running || state.maintenancePaused ||
+        appUntil > clock.now() || probeUntil > clock.now()) return false;
+    if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
+    probeUntil = clock.now() + 65000;
+    probePurpose = purpose === "display" ? "display" : "installer";
+    if (probePurpose === "display") state.values = {};
+    sensorHealth.hrmRequested = true;
+    scheduleCollection();
+    return true;
+  }
+  function endDisplayRead() {
+    if (probePurpose !== "display") return false;
+    if (displayGraceTimer !== undefined) return true;
+    // Keep optical acquisition warm for at most 15 seconds after LCD standby.
+    // The existing display-only path still cannot append samples or alerts.
+    displayGraceTimer = clock.setTimeout(function() {
+      displayGraceTimer = undefined;
+      if (probePurpose !== "display") return;
+      probeUntil = 0; probePurpose = undefined;
+      if (state.collectionMode === "app" && appUntil <= clock.now()) quietSensors();
+    }, 15000);
+    return true;
+  }
+  function setAppSession(seconds, scope) {
+    if (state.collectionMode !== "app") return false;
+    probeUntil = 0; probePurpose = undefined;
+    if (seconds === 0) { appUntil = 0; appScope = undefined; quietSensors(); changed(); return false; }
+    scope = scope || (state.policy && state.policy.scope);
+    if (!state.running || state.maintenancePaused || !scope ||
+        typeof seconds !== "number" || seconds < 1 || seconds > 86400 || Math.floor(seconds) !== seconds)
+      throw new Error("Sessione App non disponibile");
+    var resume = timer === undefined;
+    if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+    appScope = scope;
+    appUntil = clock.now() + seconds * 1000;
+    if (resume) { sensorHealth.hrmRequested = true; scheduleCollection(); changed(); }
+    return true;
+  }
   function dispose() {
+    clearDisplayGrace();
     disposed = true; state.running = false; sensorHealth.hrmRequested = false;
     if (timer !== undefined) clock.clearInterval(timer);
     timer = undefined;
-    if (notifyTimer) clock.clearTimeout(notifyTimer);
-    if (pressureTimer) clock.clearTimeout(pressureTimer);
+    if (notifyTimer !== undefined) clock.clearTimeout(notifyTimer);
+    notifyTimer = undefined;
+    clearPressureTimer();
     env.off("HRM", onHeart); env.off("connect", connected); env.off("disconnect", disconnected);
     env.hrm(false); listeners = [];
   }
-  return {state: state, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, installPolicy: installPolicy, respond: respond,
-    administration: env.administration || null,
+  return {state: state, probeSensors: probeSensors, startDisplayRead: function() { return probeSensors("display"); }, endDisplayRead: endDisplayRead, health: health, start: start, dispose: dispose, pauseRecording: pauseRecording, setCollection: setCollection, setCollectionMode: setCollectionMode, setAppSession: setAppSession, appSessionActive: function() { return state.collectionMode === 'app' && appUntil > clock.now(); }, installPolicy: installPolicy, respond: respond,
+    administration: env.administration || null, bindAppOwner: bindAppOwner,
     displaySettings: new core.DisplayPreferences(storage),
     samples: samples, events: events, timeHistory: timeHistory, tick: tick,
     readClock: function() { if (!timeTracker) throw new Error("Controllo orario non disponibile"); observeTime(); return timeTracker.status(); },
