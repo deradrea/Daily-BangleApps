@@ -1,6 +1,6 @@
 {
   "schema": "vera-node-initialization-selection/1",
-  "status": "prepared-beta",
+  "status": "published-beta",
   "name": "Vera Node 0.2.0 Beta 7",
   "channel": "beta",
   "revision": "veranode-zero-1-1c75e811fad731c2",
@@ -19,9 +19,10 @@
   ],
   "installationMode": "zero-initialization",
   "requiresMobilePackageSupport": true,
-  "published": false,
+  "published": true,
   "hardwareTestPerformed": false,
   "runtimeHardwareValidated": false,
   "offline24hTrial": "suspended",
-  "stableChanged": false
+  "stableChanged": false,
+  "releaseUrl": "https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-zero-1-1c75e811fad731c2"
 }
