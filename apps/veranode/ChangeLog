@@ -1,0 +1,2 @@
+0.01: Initial Vera Node prototype.
+0.02: App-controlled collection, offline custody, clock synchronization and staged startup; immutable package revisions are recorded in releases/.

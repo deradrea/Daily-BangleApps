@@ -12,8 +12,12 @@ test('one verified runtime is selected for both installers; tampered configurati
 
 test('Beta selection is explicit and cannot replace the default runtime',()=>{
  const read=n=>fs.readFileSync(path.join(root,n));
- const normal=select(read),beta=select(read,'beta');
- assert.notEqual(normal.revision,beta.revision);
+ const reads=[];const observed=n=>{reads.push(n);return read(n);};
+ const normal=select(observed),beta=select(observed,'beta');
+ // A promotion may temporarily put the same immutable build in both channels.
+ // Independence means choosing the explicit selector, not different bytes.
+ assert.ok(reads.includes('releases/veranode-runtime.json'));
+ assert.ok(reads.includes('releases/veranode-runtime-beta.json'));
  assert.equal(normal.revision,JSON.parse(read('releases/veranode-runtime.json')).revision);
  assert.equal(beta.revision,JSON.parse(read('releases/veranode-runtime-beta.json')).revision);
  assert.throws(()=>select(read,'stable'),/channel/);
