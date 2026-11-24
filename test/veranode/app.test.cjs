@@ -709,3 +709,17 @@ test('a deliberate button down starts display sensing before the LCD wake on rel
  f.clock.advance(80);f.input.btnRelease();f.clock.advance(401);assert.equal(f.power.at(-1),true);
  f.input.btn();assert.equal(starts,1);f.input.remove();
 });
+
+test('a visible two-minute display keeps its bounded sensing lease until standby',()=>{
+ const f=fixture('still');let until=0,starts=0;
+ f.node.startDisplayRead=()=>{until=f.clock.now()+65000;starts++;return true;};
+ const current=f.node.displaySettings.read();
+ f.node.displaySettings.set({operationId:'visible-two-minutes',expectedRevision:current.revision,
+  values:{brightnessPercent:100,standbySeconds:120,effect:'still'}});
+ f.input.btnRelease();f.clock.advance(401);f.listeners.get('lcdPower')(true);
+ f.clock.advance(70000);
+ assert.equal(f.power.at(-1),true);assert.ok(until>f.clock.now(),'visible display lost sensor lease after 65 seconds');
+ f.clock.advance(50000);assert.equal(f.power.at(-1),false);
+ const stopped=starts;f.clock.advance(120000);assert.equal(starts,stopped,'standby renewed sensing');
+ f.input.remove();assert.equal(f.clock.timers.size,0);
+});
