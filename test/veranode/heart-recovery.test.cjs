@@ -43,3 +43,29 @@ test('valid events resume updates and display-only recovery never records', () =
   assert.equal(node.samples.pending(), 0);
   node.dispose();
 });
+test('failed recovery is bounded, diagnosed and does not prevent session stop', () => {
+  const f = session();
+  f.env.hrm = on => { f.power.push(on); return !on; };
+  f.clock.advance(180000);
+  assert.deepEqual(f.power, [true, false, true]);
+  assert.match(f.node.health().startError, /Ripresa sensore battito/);
+  f.node.setAppSession(0);
+  const high = f.node.samples.next;
+  f.clock.advance(60000);
+  assert.equal(f.node.samples.next, high);
+});
+test('a clock discontinuity rebases the quiet-heart window without a false restart', () => {
+  const f = platform(core);
+  f.env.timeFactory = require('../../apps/veranode/clock.js').create;
+  const node = runtime.create(f.env);
+  node.start(); node.setAppSession(600, 'test-only');
+  node.readClock();
+  f.clock.time += 600000;
+  // Timers remain monotonic on the device; advance their fake wall deadlines
+  // too, rather than replaying old callbacks with a backwards fake clock.
+  for (const timer of f.clock.timers.values()) timer.at += 600000;
+  node.readClock();
+  f.clock.advance(30000);
+  assert.deepEqual(f.power, [true]);
+  node.dispose();
+});
