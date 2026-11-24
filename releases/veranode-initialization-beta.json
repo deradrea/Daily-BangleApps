@@ -1,18 +1,18 @@
 {
   "schema": "vera-node-initialization-selection/1",
   "status": "published-beta",
-  "name": "Vera Node 0.2.0 Beta 7",
+  "name": "Vera Node 0.2.0 Beta 9",
   "channel": "beta",
-  "revision": "veranode-zero-1-1c75e811fad731c2",
-  "path": "dist/veranode-zero/veranode-zero-1-1c75e811fad731c2/initialize.json",
-  "sha256": "1c75e811fad731c2b783853505cd61f45c6e680a0702d54def86dc7fc3123f70",
-  "size": 300438,
-  "sourceCommit": "4afdd6287be3055e63cd7c2049580e3086051b53",
+  "revision": "veranode-zero-1-c51990c51272123e",
+  "path": "dist/veranode-zero/veranode-zero-1-c51990c51272123e/initialize.json",
+  "sha256": "c51990c51272123e12b0648103d35ef0672b6c5e83a287e2b4fc52b12dbbefc1",
+  "size": 301686,
+  "sourceCommit": "48c29319024f767f3c02ae12656a3ce1f52a8bb8",
   "sourceChannel": "beta",
-  "runtimeRevision": "veranode-0.2.0-dev-03da46fb9ac6cf47",
-  "runtimePackageSha256": "b020f70c8da80dffe8337074bfc2ebf1202db82b64bdf705e429c3bdbceebf1d",
-  "minimumMobileVersion": "1.0.233",
-  "recommendedMobileVersion": "1.0.233",
+  "runtimeRevision": "veranode-0.2.0-dev-cb0704d5039eb4b7",
+  "runtimePackageSha256": "4a2cd03cdaacbe079c9d3469cc2e56ed787619eb04ccab8497eb4f4b68742fa1",
+  "minimumMobileVersion": "1.0.235",
+  "recommendedMobileVersion": "1.0.235",
   "board": "BANGLEJS2",
   "firmware": [
     "2v29"
@@ -24,5 +24,5 @@
   "runtimeHardwareValidated": false,
   "offline24hTrial": "suspended",
   "stableChanged": false,
-  "releaseUrl": "https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-zero-1-1c75e811fad731c2"
+  "releaseUrl": "https://github.com/deradrea/Daily-BangleApps/releases/tag/veranode-zero-1-c51990c51272123e"
 }
