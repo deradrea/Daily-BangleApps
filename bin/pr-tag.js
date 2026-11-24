@@ -41,9 +41,9 @@ async function main() {
     { encoding: "utf8" }
   ).split("\n").filter(x => x);
 
-  if(apps.length === 0) process.exit(1); // pipeline failed
+  if(apps.length === 0) return; // No authors to notify for tools/docs-only PRs.
 
-  const authorToApp = {};
+  const authorToApp = Object.create(null);
 
   for(const app of apps){
     const metadata = JSON.parse(readFileSync(`${app}/metadata.json`, "utf8"));
@@ -54,6 +54,7 @@ async function main() {
     const authors = Array.isArray(authorField) ? authorField : [authorField];
 
     for(const author of authors){
+      if(!isGithubLogin(author)) continue;
       if(!authorToApp[author])
         authorToApp[author] = new Set();
 
@@ -61,7 +62,7 @@ async function main() {
     }
   }
 
-  const prevTags = local ? {} : await previousTags();
+  const prevTags = local ? Object.create(null) : await previousTags();
   const output = [];
 
   for(let [author, apps] of Object.entries(authorToApp)){
@@ -97,11 +98,15 @@ function makeLine({ author, apps }) {
   return `tagging @${author} for ${apps.map(a => `\`${a}\``).join(", ")}`
 }
 
+function isGithubLogin(author) {
+  return typeof author === "string" && /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i.test(author);
+}
+
 function parseLine(line) {
   const parts = line.split(" ");
 
   if(parts.length >= 4 && parts[0] === "tagging" && parts[2] === "for")
-    return { author: parts[1], apps: parts.slice(3).map(app => app.replace(/[,`]/g, "")) };
+    return { author: parts[1].replace(/^@/, ""), apps: parts.slice(3).map(app => app.replace(/[,`]/g, "")) };
 }
 
 // allow skipping of tagging if the PR description contains a specific message
@@ -112,7 +117,7 @@ async function shouldSkip() {
     token: getenv("GITHUB_TOKEN"),
   });
 
-  return desc
+  return (desc || "")
     .split("\n")
     .filter(line => /^tag-bot: skip\s*$/.test(line))
     .length > 0;
@@ -126,7 +131,7 @@ async function previousTags() {
     token: getenv("GITHUB_TOKEN"),
   });
 
-  const tags = {};
+  const tags = Object.create(null);
 
   comments
     .filter(({ user: { login, type } }) => type === "Bot" && login === "github-actions[bot]")
@@ -170,10 +175,11 @@ function postComment({ prNumber, repo, token, comment }) {
 
 function fetchGH({ path, token, data }) {
   return new Promise((resolve, reject) => {
+    const body = data === undefined ? undefined : JSON.stringify(data);
     const options = {
       hostname: "api.github.com",
       path,
-      method: data ? "POST" : "GET",
+      method: body === undefined ? "GET" : "POST",
       headers: {
         "User-Agent": "node.js",
         "Authorization": `Bearer ${token}`,
@@ -181,14 +187,16 @@ function fetchGH({ path, token, data }) {
       },
     };
 
-    if(data)
-      options.body = data;
+    if(body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.headers["Content-Length"] = Buffer.byteLength(body);
+    }
 
-    https.get(options, res => {
+    const request = https.request(options, res => {
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {
-        if (res.statusCode === 200) {
+        if (res.statusCode === (body === undefined ? 200 : 201)) {
           try {
             resolve(data);
           } catch (e) {
@@ -199,6 +207,8 @@ function fetchGH({ path, token, data }) {
         }
       });
     }).on("error", reject);
+    if(body !== undefined) request.write(body);
+    request.end();
   });
 }
 
@@ -215,7 +225,9 @@ function debug(...args) {
   console.error(...args);
 }
 
-main().catch(e => {
+if (require.main === module) main().catch(e => {
   console.error(e);
   process.exit(1);
 });
+
+module.exports = {main, fetchGH, isGithubLogin, makeLine, parseLine};
