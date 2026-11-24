@@ -408,7 +408,8 @@ exports.create = function(env) {
         state.collectionMode === "app" && appUntil <= clock.now() && !state.maintenancePaused) {
       // A quick second look reuses the live sensor and its timestamped values.
       // No flash write, recording window or extra HRM power cycle.
-      clearDisplayGrace(); probeUntil = clock.now() + 65000; return true;
+      clearDisplayGrace(); probeUntil = clock.now() + 65000;
+      pressure(); changed(); return true;
     }
     if (purpose !== "display" && probePurpose === "display" && probeUntil > clock.now()) {
       clearDisplayGrace();
@@ -419,7 +420,16 @@ exports.create = function(env) {
     if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
     probeUntil = clock.now() + 65000;
     probePurpose = purpose === "display" ? "display" : "installer";
-    if (probePurpose === "display") state.values = {};
+    if (probePurpose === "display") {
+      // Keep valid, recent values visible while the sensor reacquires. Their
+      // original timestamps remain unchanged; stale or future values expire.
+      var now = clock.now();
+      Object.keys(state.values).forEach(function(field) {
+        var value = state.values[field];
+        if (!value || typeof value.at !== "number" || !isFinite(value.at) ||
+            now < value.at || now - value.at > 45000) delete state.values[field];
+      });
+    }
     sensorHealth.hrmRequested = true;
     scheduleCollection();
     return true;

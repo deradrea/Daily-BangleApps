@@ -701,3 +701,11 @@ test('LCD events start and stop display-only sensing and UI removal releases its
  f.listeners.get('lcdPower')(true);f.listeners.get('lcdPower')(false);
  assert.equal(starts,1);assert.equal(ends,1);f.input.remove();assert.equal(ends,2);
 });
+
+test('a deliberate button down starts display sensing before the LCD wake on release',()=>{
+ const f=fixture();let starts=0;f.node.startDisplayRead=()=>{starts++;};
+ assert.equal(f.power.at(-1),false);f.input.btn();
+ assert.equal(starts,1);assert.equal(f.power.at(-1),false);
+ f.clock.advance(80);f.input.btnRelease();f.clock.advance(401);assert.equal(f.power.at(-1),true);
+ f.input.btn();assert.equal(starts,1);f.input.remove();
+});

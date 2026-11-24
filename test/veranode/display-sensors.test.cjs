@@ -58,3 +58,39 @@ test('standby grace is bounded and repeated standby does not extend it',()=>{
  n.endDisplayRead();n.probeSensors();f.clock.advance(16000);
  assert.equal(n.health().sensorProbeActive,true);assert.equal(n.health().hrmRequested,true);n.dispose();
 });
+
+test('quick reopen requests a new temperature immediately without recording or restarting HRM',async()=>{
+ const f=platform(core);let requests=0;
+ f.env.pressure=()=>Promise.resolve({temperature:20+(++requests)});
+ const n=runtime.create(f.env);n.start();n.startDisplayRead();await Promise.resolve();
+ const oldAt=n.state.values.temperatura.at;n.endDisplayRead();f.clock.advance(10000);
+ const powers=f.power.length;n.startDisplayRead();await Promise.resolve();
+ assert.equal(requests,2);assert.equal(n.state.values.temperatura.value,22);
+ assert.ok(n.state.values.temperatura.at>oldAt);assert.equal(f.power.length,powers);
+ assert.equal(n.samples.pending(),0);assert.equal(n.events.pending(),0);assert.equal(f.sent.length,0);n.dispose();
+});
+
+test('first display after grace retains recent valid heart reading without changing its timestamp',async()=>{
+ const f=platform(core),n=runtime.create(f.env);n.start();n.startDisplayRead();
+ f.bus.emit('HRM',{bpm:72,confidence:99});const original=n.state.values.battito;
+ n.endDisplayRead();f.clock.advance(20000);assert.equal(n.health().hrmRequested,false);
+ n.startDisplayRead();assert.equal(n.state.values.battito,original);
+ assert.equal(n.state.values.battito.at,original.at);assert.equal(n.samples.pending(),0);n.dispose();
+});
+
+test('expired and future display readings are discarded and low confidence HRM is still rejected',()=>{
+ const f=platform(core),n=runtime.create(f.env);n.start();
+ n.state.values.battito={value:72,at:f.clock.now()-45001,quality:99};
+ n.state.values.temperatura={value:23,at:f.clock.now()+1,quality:100};
+ n.startDisplayRead();assert.equal(n.state.values.battito,undefined);assert.equal(n.state.values.temperatura,undefined);
+ f.bus.emit('HRM',{bpm:72,confidence:49});assert.equal(n.state.values.battito,undefined);
+ n.dispose();
+});
+
+test('repeated reopen does not duplicate a pending pressure request or cancel its BLE neighbour',async()=>{
+ const f=platform(core);let resolve,requests=0;
+ f.env.pressure=()=>{requests++;return new Promise(r=>{resolve=r;});};
+ const n=runtime.create(f.env);n.start();n.startDisplayRead();n.endDisplayRead();f.clock.advance(1000);
+ n.startDisplayRead();assert.equal(requests,1);resolve({temperature:24});await Promise.resolve();
+ assert.equal(n.state.values.temperatura.value,24);assert.equal(n.samples.pending(),0);n.dispose();
+});
