@@ -49,7 +49,12 @@
     Bangle.setBacklight(on);
     startAnimation(on);
     if (minuteTimer) clearInterval(minuteTimer);
-    minuteTimer = on ? setInterval(function() { if (ui) draw(ui); }, 60000) : undefined;
+    minuteTimer = on ? setInterval(function() {
+      // The display may stay visible for 120 seconds or be pinned. Renew the
+      // bounded read lease before it expires; standby removes this timer.
+      if (node.startDisplayRead) node.startDisplayRead();
+      if (ui) draw(ui);
+    }, 60000) : undefined;
   }
   function startAnimation(on) {
     var eligible = on && page === "clock" && style !== "still" && !(ui && ui.alert) &&
