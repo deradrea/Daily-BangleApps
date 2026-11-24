@@ -702,6 +702,8 @@
   Bangle.setUI({mode: "custom", clock: 0,
     btn: function() {
       pressedAt = Date.now();
+      if (ui.mode === "off" && !ui.alert && !adminPinnedByOperation && node.startDisplayRead)
+        node.startDisplayRead();
       if (consentEnded) traceConsent("button-after-consent");
       if (ui.alert && ui.alert.channel === "consent") {
         traceConsent("button-down");
