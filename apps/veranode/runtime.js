@@ -54,6 +54,24 @@ exports.create = function(env) {
     policy: null, policyStale: false, queue: [], storageError: null, temperatureSource: "barometer", paused: false,
     collectionMode: collectionMode, collectionEnabled: collectionMode !== "off"};
   var sensorHealth = {schemaVersion: 1, hrmRequested: false, tickCount: 0, heartEvents: 0, temperatureReads: 0, temperatureFailures: 0, startError: null};
+  var heartEventAt = 0, heartRestartUsed = false;
+  sensorHealth.heartRestarts = 0;
+  function requestHeart(message) {
+    if (env.hrm(true) === false) throw new Error(message || "Sensore battito non avviato");
+    heartEventAt = clock.now(); heartRestartUsed = false;
+  }
+  function recoverQuietHeart() {
+    // A powered sensor without any HRM events is distinct from low confidence.
+    // One recovery per activation; never cycle repeatedly on poor skin contact.
+    if (!sensorHealth.hrmRequested || heartRestartUsed ||
+        clock.now() < heartEventAt || clock.now() - heartEventAt < 45000) return;
+    heartRestartUsed = true;
+    try {
+      env.hrm(false);
+      if (env.hrm(true) === false) throw new Error("HRM unavailable");
+      sensorHealth.heartRestarts++;
+    } catch (_) { sensorHealth.startError = "Ripresa sensore battito non riuscita"; }
+  }
   var appUntil = 0, probeUntil = 0, probePurpose, appScope, displayGraceTimer;
   var listeners = [], timer, pendingPressure = false, pressureGeneration = 0, pressureTimer;
   var engine, disposed = false, lastNotify = 0, notifyTimer;
@@ -66,6 +84,7 @@ exports.create = function(env) {
   }
   function rebaseTime(delta) {
     state.values = {};
+    heartEventAt += delta;
     if (appUntil) appUntil += delta;
     if (probeUntil) probeUntil += delta;
     if (state.lastRecordAt !== null) state.lastRecordAt += delta;
@@ -176,6 +195,7 @@ exports.create = function(env) {
     if (!collecting()) { if (state.collectionMode === "app" && timer !== undefined) quietSensors(); return; }
     observeTime();
     sensorHealth.tickCount++;
+    recoverQuietHeart();
     pressure();
     var acc;
     try { acc = env.accel(); } catch (e) { acc = null; }
@@ -273,7 +293,7 @@ exports.create = function(env) {
     state.queue.shift(); saveAlerts(); changed(); return true;
   }
   function onHeart(value) {
-    if (collecting()) sensorHealth.heartEvents++;
+    if (collecting()) { sensorHealth.heartEvents++; heartEventAt = clock.now(); }
     if (value && typeof value.confidence === "number" && value.confidence >= 50 &&
         typeof value.bpm === "number" && isFinite(value.bpm) && value.bpm > 0 && value.bpm <= 65535) ingest("battito", value.bpm, value.confidence);
   }
@@ -294,7 +314,7 @@ exports.create = function(env) {
       env.on("HRM", onHeart); env.on("connect", connected); env.on("disconnect", disconnected);
       state.connected = env.connected();
       var acquiring = state.collectionMode === "active";
-      if (acquiring && env.hrm(true) === false) throw new Error("Sensore battito non avviato");
+      if (acquiring) requestHeart();
       sensorHealth.hrmRequested = acquiring;
       state.running = true;
       if (acquiring) scheduleCollection();
@@ -320,6 +340,7 @@ exports.create = function(env) {
       hrmRequested: sensorHealth.hrmRequested, maintenancePaused: state.maintenancePaused === true,
       recordingBlocked: state.paused === true || !collecting(),
       tickCount: sensorHealth.tickCount, heartEvents: sensorHealth.heartEvents,
+      heartRestarts: sensorHealth.heartRestarts,
       temperatureReads: sensorHealth.temperatureReads, temperatureFailures: sensorHealth.temperatureFailures,
       lastRecordAt: state.lastRecordAt, nextRecordAt: state.nextRecordAt,
       startError: sensorHealth.startError};
@@ -348,7 +369,7 @@ exports.create = function(env) {
     if (state.collectionMode === mode) return mode;
     var enabled = mode !== "off";
     var resume = mode === "active" && !collecting() && state.running && !state.maintenancePaused;
-    if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+    if (resume) requestHeart("Sensore battito non riavviato");
     var value = core.pack(mode === "app" ? mode : enabled);
     try {
       storage.write(collectionKey, value);
@@ -390,7 +411,7 @@ exports.create = function(env) {
       // A failed resume must remain visibly paused, with no false running proof.
       var resume = state.running && state.collectionEnabled &&
         (state.collectionMode !== "app" || appUntil > clock.now());
-      if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+      if (resume) requestHeart("Sensore battito non riavviato");
       sensorHealth.hrmRequested = resume;
       state.maintenancePaused = false;
       if (resume) scheduleCollection();
@@ -417,7 +438,7 @@ exports.create = function(env) {
     }
     if (state.collectionMode !== "app" || !state.running || state.maintenancePaused ||
         appUntil > clock.now() || probeUntil > clock.now()) return false;
-    if (env.hrm(true) === false) throw new Error("Sensore battito non avviato");
+    requestHeart();
     probeUntil = clock.now() + 65000;
     probePurpose = purpose === "display" ? "display" : "installer";
     if (probePurpose === "display") {
@@ -456,7 +477,7 @@ exports.create = function(env) {
         typeof seconds !== "number" || seconds < 1 || seconds > 86400 || Math.floor(seconds) !== seconds)
       throw new Error("Sessione App non disponibile");
     var resume = timer === undefined;
-    if (resume && env.hrm(true) === false) throw new Error("Sensore battito non riavviato");
+    if (resume) requestHeart("Sensore battito non riavviato");
     appScope = scope;
     appUntil = clock.now() + seconds * 1000;
     if (resume) { sensorHealth.hrmRequested = true; scheduleCollection(); changed(); }
