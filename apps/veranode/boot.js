@@ -70,6 +70,29 @@
     Object.keys(services).forEach(function(service) { bleServices[service] = services[service]; });
     bleServiceOptions.uart = true;
   } else NRF.setServices(services, {uart: true});
+  var savedHeartWearDetect;
+  function heartPower(on) {
+    // VC31 wear detection can suspend the optical stream while Vera still
+    // owns a powered sensor. Keep acquisition explicit for this owner only.
+    // Firmware resets this option on power-up: apply it AFTER setHRMPower.
+    if (on && savedHeartWearDetect === undefined && Bangle.getOptions) {
+      var options = Bangle.getOptions();
+      if (typeof options.hrmWearDetect === "boolean") savedHeartWearDetect = options.hrmWearDetect;
+    }
+    var powered = Bangle.setHRMPower(on, "veranode");
+    try {
+      if (on && powered !== false && savedHeartWearDetect !== undefined)
+        Bangle.setOptions({hrmWearDetect: false});
+      if (!on && savedHeartWearDetect !== undefined) {
+        Bangle.setOptions({hrmWearDetect: savedHeartWearDetect});
+        savedHeartWearDetect = undefined;
+      }
+    } catch (error) {
+      if (on) Bangle.setHRMPower(false, "veranode");
+      throw error;
+    }
+    return powered;
+  }
   global.VeraNode = require("veranode.runtime.js").create({
     progress: progress,
     core: core, storage: storage, mac: NRF.getAddress().split(" ")[0].toUpperCase(),
@@ -81,7 +104,7 @@
     },
     clock: {now: Date.now, setWall: function(ms, timezoneMinutes) { setTime(ms / 1000); E.setTimeZone(timezoneMinutes / 60); }, setTimeout: setTimeout, clearTimeout: clearTimeout,
       setInterval: setInterval, clearInterval: clearInterval},
-    hrm: function(on) { return Bangle.setHRMPower(on, "veranode"); },
+    hrm: heartPower,
     accel: function() { return Bangle.getAccel(); },
     pressure: function() { return Bangle.getPressure(); },
     connected: function() { return !!NRF.getSecurityStatus().connected; },
